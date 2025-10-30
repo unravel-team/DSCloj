@@ -1,4 +1,4 @@
-.PHONY: help repl nrepl test test-ci test-integration coverage lint clean build install compile
+.PHONY: help repl nrepl test test-ci test-integration coverage lint clean build install compile deploy
 
 help:
 	@echo "Available targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  clean            - Remove target directory"
 	@echo "  build            - Build the project"
 	@echo "  install          - Install to local Maven repository"
+	@echo "  deploy           - Deploy to Clojars (requires CLOJARS_USERNAME and CLOJARS_PASSWORD)"
 
 repl:
 	clojure -M:repl
@@ -47,3 +48,23 @@ build:
 
 install:
 	clojure -T:build install
+
+deploy:
+	@echo "🚀 Deploying DSCloj to Clojars..."
+	@if [ -z "$$CLOJARS_USERNAME" ]; then \
+		echo "❌ Error: CLOJARS_USERNAME environment variable is not set"; \
+		exit 1; \
+	fi
+	@if [ -z "$$CLOJARS_PASSWORD" ]; then \
+		echo "❌ Error: CLOJARS_PASSWORD environment variable is not set"; \
+		exit 1; \
+	fi
+	@echo "✅ Environment variables are set"
+	@echo "🧪 Running tests..."
+	@$(MAKE) test
+	@echo "� Building JAR..."
+	@clojure -T:build jar
+	@echo "📦 Deploying version 0.1.0-alpha to Clojars..."
+	@clojure -X:deploy :artifact '"target/DSCloj-0.1.0-alpha.jar"'
+	@echo "✅ Deployment complete!"
+	@echo "Verify at: https://clojars.org/tech.unravel/DSCloj"

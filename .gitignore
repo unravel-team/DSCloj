@@ -7,18 +7,30 @@ target/
 .socket-repl-port
 .lsp/
 
-# Leiningen
+# Generated files - do not commit
 pom.xml
 pom.xml.asc
 *.jar
 *.class
+
+# Leiningen
 /lib/
 /classes/
 /out/
 /target/
+.lein-deps-sum
+.lein-repl-history
+.lein-plugins/
+.lein-failures
+.lein-env
 
 # Maven
 dependency-reduced-pom.xml
+release.properties
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+pom.xml.tag
 
 # REPL
 .nrepl-port

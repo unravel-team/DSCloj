@@ -1,11 +1,33 @@
 {:paths ["src" "resources"]
+ :group-id "tech.unravel"
+ :artifact-id "dscloj"
+ :version "0.1.0-alpha"
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         tech.unravel/litellm-clj {:mvn/version "0.3.0-alpha"}
         metosin/malli {:mvn/version "0.16.4"}}
+ 
+ ;; POM metadata for deps-deploy (pom.xml auto-generated during deployment)
+ :mvn/repos {"clojars" {:url "https://repo.clojars.org/"}}
+ 
+ :pom-data {:description "A Clojure library inspired by DSPy, providing a declarative approach to building and optimizing language model pipelines"
+            :url "https://github.com/unravel-team/DSCloj"
+            :licenses [{:name "MIT License"
+                        :url "https://opensource.org/licenses/MIT"}]
+            :scm {:url "https://github.com/unravel-team/DSCloj"
+                  :connection "scm:git:git://github.com/unravel-team/DSCloj.git"
+                  :developerConnection "scm:git:ssh://git@github.com/unravel-team/DSCloj.git"
+                  :tag "HEAD"}}
+ 
  :aliases
  {:dev {:extra-paths ["dev" "test"]
         :extra-deps {org.clojure/tools.namespace {:mvn/version "1.5.0"}}}
   :test {:extra-paths ["test"]
          :extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}}
   :repl {:extra-deps {nrepl/nrepl {:mvn/version "1.3.0"}
-                      cider/cider-nrepl {:mvn/version "0.50.2"}}}}}
+                      cider/cider-nrepl {:mvn/version "0.50.2"}}}
+  :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.5"}}
+          :ns-default build}
+  :deploy {:replace-deps {slipset/deps-deploy {:mvn/version "0.2.2"}}
+           :exec-fn deps-deploy.deps-deploy/deploy
+           :exec-args {:installer :remote
+                       :sign-releases? false}}}}
