@@ -9,14 +9,13 @@
   A module is a map with:
   - :inputs - A vector of field definitions with :name, :type, :description keys
   - :outputs - A vector of field definitions with :name, :type, :description keys
-  - :rules - Optional string with detailed rules and examples
-  - :objective - Optional string describing the task objective
+  - :instructions - Optional string describing the task instructions, rules, and examples
   
   Example:
     (module->prompt example-module)
   
   Returns a formatted prompt string."
-  [{:keys [inputs outputs rules objective]}]
+  [{:keys [inputs outputs instructions]}]
   (let [format-field (fn [idx {:keys [name type description]}]
                        (str (inc idx) ". `" (clojure.core/name name) "` (" type "): " description))
         
@@ -44,13 +43,13 @@
                                              (when (= type "bool")
                                                "        # note: the value you produce must be True or False")))))))
         
-        ;; Objective section
-        objective-section (when objective
-                            (str "[[ ## completed ## ]]\n"
-                                 "In adhering to this structure, your objective is: " objective))
+        ;; Instructions section
+        instructions-section (when instructions
+                               (str "[[ ## completed ## ]]\n"
+                                    "In adhering to this structure, your instructions are: " instructions))
         
-        ;; Combine all sections (rules inserted between output and interaction format)
-        sections (filter some? [input-section output-section rules interaction-format objective-section])]
+        ;; Combine all sections
+        sections (filter some? [input-section output-section interaction-format instructions-section])]
     (str/join "\n" sections)))
 
 (defn parse-output
@@ -133,165 +132,3 @@
                                  :content)
                              module)]
     parsed))
-
-
-(def example-module
-  {:inputs  [{:name :question 
-              :type "str"
-              :description "The question to answer"
-              :required true}]
-   
-   :outputs [{:name :reasoning
-              :type "str"
-              :description "Step-by-step reasoning process"}
-             {:name :answer 
-              :type "str"
-              :description "The final answer"}
-             {:name :confidence 
-              :type "float"
-              :description "Confidence score between 0.0 and 1.0"}]
-   
-   :objective "Answer questions with clear reasoning and confidence scores."})
-
-(comment
-  ;; =============================================================================
-  ;; EXAMPLE 1: Simple Q&A Module
-  ;; =============================================================================
-  
-  (def qa-module
-    {:inputs [{:name :question
-               :type "str"
-               :description "The question to answer"}]
-     :outputs [{:name :answer
-                :type "str"
-                :description "The answer to the question"}]
-     :objective "Provide concise and accurate answers."})
-  
-  ;; Call predict - it handles everything automatically:
-  ;; - Generates prompt from module
-  ;; - Injects input values
-  ;; - Calls LLM
-  ;; - Parses output
-  (def result (predict qa-module 
-                       {:question "What is the capital of France?"}
-                       {:model "gpt-4"
-                        :api-key (System/getenv "OPENAI_API_KEY")}))
-  
-  (:answer result)
-  ;; => "Paris"
-  
-  
-  ;; =============================================================================
-  ;; EXAMPLE 2: Financial Comparison with Rules
-  ;; =============================================================================
-  
-  (def financial-comparison-module
-    {:inputs [{:name :query 
-               :type "str"
-               :description "Current user query"}
-              {:name :data
-               :type "str"
-               :description "Fetched financial data"}]
-     :outputs [{:name :reasoning
-                :type "str"
-                :description "Brief explanation of the comparison"}
-               {:name :summary
-                :type "str"
-                :description "Summary in markdown"}
-               {:name :recommendation
-                :type "str"
-                :description "Investment recommendation"}]
-     :rules (str "STRICT RULES:\n"
-                 "1. ONLY use data provided in the input\n"
-                 "2. Never make up financial information\n"
-                 "3. Be clear about risks and limitations")
-     :objective "Compare financial instruments based on provided data."})
-  
-  (def fin-result 
-    (predict financial-comparison-module
-             {:query "Compare HDFC Bank FD vs SBI FD"
-              :data "HDFC Bank FD: 7.0% interest, 5 years\nSBI FD: 6.8% interest, 5 years"}
-             {:model "gpt-4"
-              :api-key (System/getenv "OPENAI_API_KEY")}))
-  
-  (:reasoning fin-result)
-  (:summary fin-result)
-  (:recommendation fin-result)
-  
-  
-  ;; =============================================================================
-  ;; EXAMPLE 3: Custom LLM Options
-  ;; =============================================================================
-  
-  (def translation-module
-    {:inputs [{:name :text
-               :type "str"
-               :description "Text to translate"}
-              {:name :target_language
-               :type "str"
-               :description "Target language"}]
-     :outputs [{:name :translation
-                :type "str"
-                :description "Translated text"}]
-     :objective "Translate text accurately."})
-  
-  (def translation-result 
-    (predict translation-module
-             {:text "Hello, how are you?"
-              :target_language "Spanish"}
-             {:model "gpt-4"
-              :temperature 0.3
-              :max-tokens 100
-              :api-key (System/getenv "OPENAI_API_KEY")}))
-  
-  (:translation translation-result)
-  ;; => "Hola, ¿cómo estás?"
-  
-  
-  ;; =============================================================================
-  ;; EXAMPLE 4: Multiple Output Types (bool, float, str)
-  ;; =============================================================================
-  
-  (def qa-with-confidence-module
-    {:inputs [{:name :question
-               :type "str"
-               :description "Question to answer"}]
-     :outputs [{:name :answer
-                :type "str"
-                :description "The answer"}
-               {:name :is_confident
-                :type "bool"
-                :description "Whether the answer is confident"}
-               {:name :confidence_score
-                :type "float"
-                :description "Confidence from 0.0 to 1.0"}]
-     :objective "Answer with confidence assessment."})
-  
-  (def qa-result 
-    (predict qa-with-confidence-module
-             {:question "What is the speed of light?"}
-             {:model "gpt-4"
-              :api-key (System/getenv "OPENAI_API_KEY")}))
-  
-  ;; Types are automatically converted
-  (:is_confident qa-result)     ;; => true (boolean)
-  (:confidence_score qa-result) ;; => 0.95 (float)
-  (:answer qa-result)           ;; => "The speed of light is..."
-  
-  (when (:is_confident qa-result)
-    (if (> (:confidence_score qa-result) 0.8)
-      (println "High confidence:" (:answer qa-result))
-      (println "Low confidence:" (:answer qa-result))))
-  
-  
-  ;; =============================================================================
-  ;; EXAMPLE 5: Inspecting Generated Prompts
-  ;; =============================================================================
-  
-  ;; View the prompt template
-  (def prompt-template (module->prompt qa-module))
-  (println prompt-template)
-  
-  ;; Useful for debugging what's sent to the LLM
-  
-  )

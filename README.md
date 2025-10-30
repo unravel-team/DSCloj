@@ -11,14 +11,81 @@ DSClj leverages [litellm-clj](https://github.com/unravel-team/litellm-clj) to pr
 
 ## Introduction
 
-DSClj brings the power of declarative LLM programming to Clojure. Inspired by Stanford's DSPy framework, it enables you to:
+DSClj brings the power of declarative LLM programming to Clojure. Inspired by Stanford's DSPy framework.
 
-- **Compose LLM operations** declaratively using functional programming patterns
-- **Optimize prompts and pipelines** automatically based on validation metrics
-- **Work with any LLM provider** through the unified litellm-clj interface
-- **Build maintainable AI applications** with testable, modular components
+## Quickstart Guide
 
-Whether you're building RAG systems, agents, or complex LLM pipelines, DSClj provides the abstractions and tools to make your code more robust and maintainable.
+### Installation
+
+Add DSClj to your `deps.edn`:
+
+```clojure
+{:deps {io.unravel/dsclj {:mvn/version "0.1.0"}}}
+```
+
+### Basic Usage
+
+DSClj works by defining **modules** - declarative specifications of LLM tasks with typed inputs and outputs.
+
+```clojure
+(require '[dsclj.core :as dsclj])
+
+;; 1. Define a module
+(def qa-module
+  {:inputs [{:name :question
+             :type "str"
+             :description "The question to answer"}]
+   :outputs [{:name :answer
+              :type "str"
+              :description "The answer to the question"}]
+   :instructions "Provide concise and accurate answers."})
+
+;; 2. Use the module with predict
+(def result (dsclj/predict qa-module 
+                            {:question "What is the capital of France?"}
+                            {:model "gpt-4"
+                             :api-key (System/getenv "OPENAI_API_KEY")}))
+
+;; 3. Access the structured output
+(:answer result)
+;; => "Paris"
+```
+
+### Key Concepts
+
+**Modules** are maps with:
+- `:inputs` - Vector of input field definitions
+- `:outputs` - Vector of output field definitions  
+- `:instructions` - Optional string describing the task instructions, rules, and examples
+
+**Fields** are maps with:
+- `:name` - Keyword identifier
+- `:type` - String type ("str", "int", "float", "bool")
+- `:description` - Human-readable description
+
+The `predict` function:
+1. Generates a prompt from the module specification
+2. Injects your input values
+3. Calls the LLM
+4. Parses and type-converts the output
+
+### More Examples
+
+See the [`examples/`](examples/) directory for:
+- Simple Q&A modules
+- Financial comparison with instructions and rules
+- Translation with custom LLM options
+- Multiple output types (bool, float, str)
+- Inspecting generated prompts
+
+### Supported LLM Providers
+
+DSClj uses [litellm-clj](https://github.com/unravel-team/litellm-clj) and supports:
+- OpenAI (GPT-3.5, GPT-4)
+- Anthropic (Claude)
+- Google (PaLM, Gemini)
+- Azure OpenAI
+- And many more...
 
 ## License
 
