@@ -19,3 +19,13 @@ DSClj brings the power of declarative LLM programming to Clojure. Inspired by St
 - **Build maintainable AI applications** with testable, modular components
 
 Whether you're building RAG systems, agents, or complex LLM pipelines, DSClj provides the abstractions and tools to make your code more robust and maintainable.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+## Acknowledgments
+
+- [LiteLLM](https://github.com/stanfordnlp/dspy) - The original Python library that inspired this port
