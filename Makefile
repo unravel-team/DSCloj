@@ -38,7 +38,7 @@ lint:
 
 compile:
 	@echo "Compiling and checking syntax..."
-	clojure -M -e "(require 'dsclj.core) (println \"✓ Code compiles successfully\")"
+	clojure -M -e "(require 'dscloj.core) (println \"✓ Code compiles successfully\")"
 
 clean:
 	rm -rf target .cpcache
