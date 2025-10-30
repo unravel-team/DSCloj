@@ -1,4 +1,4 @@
-(ns dsclj.core
+(ns dscloj.core
   (:require [litellm.core :as litellm]
             [malli.core :as m]
             [clojure.string :as str]))

@@ -1,6 +1,6 @@
-(ns dsclj.integration-test
+(ns dscloj.integration-test
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [dsclj.core :as dsclj]))
+            [dscloj.core :as dscloj]))
 
 (def api-key-available?
   "Check if OPENAI_API_KEY is set in environment"
@@ -25,7 +25,7 @@
                                   :type "str"
                                   :description "The answer to the question"}]
                        :instructions "Answer the question accurately and concisely."}
-            result (dsclj/predict qa-module 
+            result (dscloj/predict qa-module 
                                   {:question "What is 2+2? Reply with just the number."}
                                   {:model "gpt-3.5-turbo"
                                    :api-key (System/getenv "OPENAI_API_KEY")
@@ -45,7 +45,7 @@
                                          :type "bool"
                                          :description "Whether the statement is true or false"}]
                               :instructions "Determine if the statement is true or false."}
-            result (dsclj/predict validator-module
+            result (dscloj/predict validator-module
                                   {:statement "The Earth orbits around the Sun."}
                                   {:model "gpt-3.5-turbo"
                                    :api-key (System/getenv "OPENAI_API_KEY")
@@ -71,7 +71,7 @@
                                         :type "str"
                                         :description "Brief summary"}]
                              :instructions "Analyze the text and provide word count, check for punctuation, and give a brief summary."}
-            result (dsclj/predict analyzer-module
+            result (dscloj/predict analyzer-module
                                   {:text "Hello, world! This is a test."}
                                   {:model "gpt-3.5-turbo"
                                    :api-key (System/getenv "OPENAI_API_KEY")                                                   :temperature 0})]

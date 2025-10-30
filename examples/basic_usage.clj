@@ -1,5 +1,5 @@
 (ns examples.basic-usage
-  (:require [dsclj.core :as dsclj]))
+  (:require [dscloj.core :as dscloj]))
 
 ;; =============================================================================
 ;; EXAMPLE 1: Simple Q&A Module
@@ -20,7 +20,7 @@
   ;; - Injects input values
   ;; - Calls LLM
   ;; - Parses output
-  (def result (dsclj/predict qa-module 
+  (def result (dscloj/predict qa-module 
                               {:question "What is the capital of France?"}
                               {:model "gpt-4"
                                :api-key (System/getenv "OPENAI_API_KEY")}))
@@ -58,7 +58,7 @@
 
 (comment
   (def fin-result 
-    (dsclj/predict financial-comparison-module
+    (dscloj/predict financial-comparison-module
                    {:query "Compare HDFC Bank FD vs SBI FD"
                     :data "HDFC Bank FD: 7.0% interest, 5 years\nSBI FD: 6.8% interest, 5 years"}
                    {:model "gpt-4"
@@ -88,7 +88,7 @@
 
 (comment
   (def translation-result 
-    (dsclj/predict translation-module
+    (dscloj/predict translation-module
                    {:text "Hello, how are you?"
                     :target_language "Spanish"}
                    {:model "gpt-4"
@@ -122,7 +122,7 @@
 
 (comment
   (def qa-result 
-    (dsclj/predict qa-with-confidence-module
+    (dscloj/predict qa-with-confidence-module
                    {:question "What is the speed of light?"}
                    {:model "gpt-4"
                     :api-key (System/getenv "OPENAI_API_KEY")}))
@@ -145,7 +145,7 @@
 
 (comment
   ;; View the prompt template
-  (def prompt-template (dsclj/module->prompt qa-module))
+  (def prompt-template (dscloj/module->prompt qa-module))
   (println prompt-template)
   
   ;; Useful for debugging what's sent to the LLM
