@@ -65,9 +65,9 @@
     (parse-output llm-response {:outputs [{:name :answer :type \"str\"}
                                           {:name :confidence :type \"bool\"}]})"
   [response {:keys [outputs]}]
-  (let [;; Extract content between [[ ## field_name ## ]] markers
+  (let [;; Extract content between [[ ## field_name ## ]] or [[##field_name##]] markers
         extract-field (fn [field-name text]
-                        (let [pattern (re-pattern (str "\\[\\[ ## " (name field-name) " ## \\]\\]\\s*\\n([\\s\\S]*?)(?=\\n\\[\\[ ## |$)"))
+                        (let [pattern (re-pattern (str "\\[\\[\\s*##\\s*" (name field-name) "\\s*##\\s*\\]\\]\\s*\\n([\\s\\S]*?)(?=\\n\\[\\[\\s*##|$)"))
                               match (re-find pattern text)]
                           (when match
                             (str/trim (second match)))))

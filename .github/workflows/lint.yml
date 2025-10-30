@@ -1,0 +1,43 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Install Clojure
+      uses: DeLaGuardo/setup-clojure@12.5
+      with:
+        cli: latest
+    
+    - name: Cache Clojure dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gitlibs
+          .cpcache
+        key: ${{ runner.os }}-clojure-${{ hashFiles('**/deps.edn') }}
+        restore-keys: |
+          ${{ runner.os }}-clojure-
+    
+    - name: Run linter
+      run: make lint
+    
+    - name: Compile and check syntax
+      run: make compile

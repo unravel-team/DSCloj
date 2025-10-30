@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        java-version: ['11', '17', '21']
+      fail-fast: false
+    
+    name: Test on Java ${{ matrix.java-version }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Java ${{ matrix.java-version }}
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: ${{ matrix.java-version }}
+    
+    - name: Install Clojure
+      uses: DeLaGuardo/setup-clojure@12.5
+      with:
+        cli: latest
+    
+    - name: Cache Clojure dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gitlibs
+          .cpcache
+        key: ${{ runner.os }}-clojure-${{ hashFiles('**/deps.edn') }}
+        restore-keys: |
+          ${{ runner.os }}-clojure-
+    
+    - name: Run tests
+      run: make test-ci

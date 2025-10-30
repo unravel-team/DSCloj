@@ -1,17 +1,18 @@
-.PHONY: help repl nrepl test test-ci coverage lint clean build install compile
+.PHONY: help repl nrepl test test-ci test-integration coverage lint clean build install compile
 
 help:
 	@echo "Available targets:"
-	@echo "  repl      - Start a Clojure REPL"
-	@echo "  nrepl     - Start an nREPL server on port 7888"
-	@echo "  test      - Run tests"
-	@echo "  test-ci   - Run tests with documentation reporter"
-	@echo "  coverage  - Run tests with coverage report"
-	@echo "  lint      - Run clj-kondo linter"
-	@echo "  compile   - Compile and check syntax"
-	@echo "  clean     - Remove target directory"
-	@echo "  build     - Build the project"
-	@echo "  install   - Install to local Maven repository"
+	@echo "  repl             - Start a Clojure REPL"
+	@echo "  nrepl            - Start an nREPL server on port 7888"
+	@echo "  test             - Run tests"
+	@echo "  test-ci          - Run tests with documentation reporter"
+	@echo "  test-integration - Run integration tests (requires OPENAI_API_KEY)"
+	@echo "  coverage         - Run tests with coverage report"
+	@echo "  lint             - Run clj-kondo linter"
+	@echo "  compile          - Compile and check syntax"
+	@echo "  clean            - Remove target directory"
+	@echo "  build            - Build the project"
+	@echo "  install          - Install to local Maven repository"
 
 repl:
 	clojure -M:repl
@@ -24,8 +25,9 @@ nrepl:
 test:
 	clojure -M:test -m kaocha.runner
 
-test-ci:
-	clojure -M:test -m kaocha.runner --reporter kaocha.report/documentation
+test-integration:
+	@echo "Running integration tests (requires OPENAI_API_KEY)..."
+	clojure -M:test -m kaocha.runner --focus-meta :integration
 
 coverage:
 	clojure -M:test:coverage
