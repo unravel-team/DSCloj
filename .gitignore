@@ -1,0 +1,50 @@
+# Clojure
+target/
+.cpcache/
+.nrepl-port
+.nrepl-history
+.rebel_readline_history
+.socket-repl-port
+.lsp/
+
+# Leiningen
+pom.xml
+pom.xml.asc
+*.jar
+*.class
+/lib/
+/classes/
+/out/
+/target/
+
+# Maven
+dependency-reduced-pom.xml
+
+# REPL
+.nrepl-port
+.rebel_readline_history
+
+# Testing
+.clj-kondo/.cache/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.calva/
+.clj-lsp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.log
+
+# Coverage
+.cloverage/
+
+# Secrets
+.env
+.env.local
+secrets.edn
