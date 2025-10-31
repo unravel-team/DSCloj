@@ -61,9 +61,9 @@ deploy:
 	@echo "✅ Environment variables are set"
 	@echo "🧪 Running tests..."
 	@$(MAKE) test
-	@echo "� Building JAR..."
+	@echo "🔨 Building JAR..."
 	@clojure -T:build jar
-	@echo "📦 Deploying version 0.1.0-alpha to Clojars..."
-	@clojure -X:deploy :artifact '"target/DSCloj-0.1.0-alpha.jar"'
+	@echo "📦 Deploying version 0.1.0-alpha.1 to Clojars..."
+	@clojure -X:deploy :artifact '"target/dscloj-0.1.0-alpha.1.jar"'
 	@echo "✅ Deployment complete!"
-	@echo "Verify at: https://clojars.org/tech.unravel/DSCloj"
+	@echo "Verify at: https://clojars.org/tech.unravel/DSClj"
