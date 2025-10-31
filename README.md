@@ -53,30 +53,67 @@ DSCloj works by defining **modules** - declarative specifications of LLM tasks w
 
 ### Key Concepts
 
-**Modules** are maps with:
-- `:inputs` - Vector of input field definitions
-- `:outputs` - Vector of output field definitions  
+**Modules** are maps with either:
+- **Field Vectors** (traditional):
+  - `:inputs` - Vector of input field definitions
+  - `:outputs` - Vector of output field definitions
+- **Malli Schemas** (recommended):
+  - `:input-schema` - Malli schema defining input structure
+  - `:output-schema` - Malli schema defining output structure
 - `:instructions` - Optional string describing the task instructions, rules, and examples
 
-**Fields** are maps with:
+**Fields** (when using field vectors) are maps with:
 - `:name` - Keyword identifier
 - `:type` - String type ("str", "int", "float", "bool")
 - `:description` - Human-readable description
 
 The `predict` function:
-1. Generates a prompt from the module specification
-2. Injects your input values
-3. Calls the LLM
-4. Parses and type-converts the output
+1. Validates input data (if using Malli schemas)
+2. Generates a prompt from the module specification
+3. Injects your input values
+4. Calls the LLM
+5. Parses and type-converts the output
+6. Validates output data (if using Malli schemas)
+
+### Malli Schema Support
+
+DSCloj supports [Malli](https://github.com/metosin/malli) schemas for defining module inputs and outputs with automatic validation:
+
+```clojure
+(require '[malli.core :as m])
+
+;; Define a module with Malli schemas
+(def qa-module-malli
+  {:input-schema [:map
+                  [:question [:string {:description "The question to answer"}]]]
+   :output-schema [:map
+                   [:answer [:string {:description "The answer"}]]]
+   :instructions "Provide concise and accurate answers."})
+
+;; Use it just like traditional modules
+(def result (dscloj/predict qa-module-malli 
+                            {:question "What is the capital of France?"}
+                            {:model "gpt-4"
+                             :api-key (System/getenv "OPENAI_API_KEY")}))
+
+;; Invalid inputs/outputs are automatically validated
+(dscloj/predict qa-module-malli 
+               {:question 123}  ; Throws validation error - should be string
+               {:model "gpt-4"})
+```
+
+**Benefits of Malli Schemas:**
+- Type safety with automatic validation
+- Reusable schema definitions
+- Detailed error messages for debugging
+- Better IDE support and autocomplete
+- Backward compatible with field vectors
 
 ### More Examples
 
 See the [`examples/`](examples/) directory for:
-- Simple Q&A modules
-- Financial comparison with instructions and rules
-- Translation with custom LLM options
-- Multiple output types (bool, float, str)
-- Inspecting generated prompts
+- **basic_usage.clj**: Simple Q&A modules, financial comparison with instructions and rules, translation with custom LLM options, multiple output types (bool, float, str), inspecting generated prompts
+- **malli_usage.clj**: Malli schema definitions, validation examples, schema reusability, error handling, backward compatibility
 
 ### Supported LLM Providers
 
