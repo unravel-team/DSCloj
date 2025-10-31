@@ -20,7 +20,7 @@ DSCloj brings the power of declarative LLM programming to Clojure. Inspired by S
 Add DSCloj to your `deps.edn`:
 
 ```clojure
-{:deps {io.unravel/dscloj {:mvn/version "0.1.0"}}}
+{:deps {tech.unravel/dscloj {:mvn/version "0.1.0"}}}
 ```
 
 ### Basic Usage
