@@ -201,4 +201,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- [LiteLLM](https://github.com/stanfordnlp/dspy) - The original Python library that inspired this port
+- [DSPy](https://github.com/stanfordnlp/dspy) - The original Python library that inspired this port
