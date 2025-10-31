@@ -8,114 +8,72 @@
 ;; Malli Schema Support
 ;; =============================================================================
 
-(defn malli-type->str
-  "Convert Malli type to string type representation."
-  [malli-type]
+(defn spec->type-str
+  "Convert Malli spec to string type representation."
+  [spec]
   (cond
-    (= malli-type :string) "str"
-    (= malli-type :int) "int"
-    (= malli-type :double) "float"
-    (= malli-type :float) "float"
-    (= malli-type :boolean) "bool"
-    (= malli-type 'string?) "str"
-    (= malli-type 'int?) "int"
-    (= malli-type 'double?) "float"
-    (= malli-type 'float?) "float"
-    (= malli-type 'boolean?) "bool"
+    (= spec :string) "str"
+    (= spec :int) "int"
+    (= spec :double) "float"
+    (= spec :float) "float"
+    (= spec :boolean) "bool"
+    (= spec 'string?) "str"
+    (= spec 'int?) "int"
+    (= spec 'double?) "float"
+    (= spec 'float?) "float"
+    (= spec 'boolean?) "bool"
+    (vector? spec) (spec->type-str (first spec))
     :else "str"))
 
-(defn malli-schema->field
-  "Convert a Malli schema property to a field definition.
+(defn validate-field
+  "Validate a single field value against its Malli spec.
   
   Parameters:
-  - prop-name: The property name (keyword)
-  - prop-schema: The Malli schema for this property
+  - field: Field definition with :name, :spec, :description
+  - value: The value to validate
   
-  Returns a field map with :name, :type, and :description."
-  [prop-name prop-schema]
-  (let [;; Handle both simple types and vector schemas
-        schema-vec (if (vector? prop-schema) prop-schema [prop-schema])
-        base-type (first schema-vec)
-        ;; Check if second element is a map (properties)
-        props (when (and (> (count schema-vec) 1)
-                        (map? (second schema-vec)))
-                (second schema-vec))
-        description (or (:description props) 
-                       (str "Field " (name prop-name)))]
-    {:name prop-name
-     :type (malli-type->str base-type)
-     :description description}))
+  Returns value if valid, throws exception if invalid."
+  [field value]
+  (let [{:keys [name spec]} field]
+    (if (m/validate spec value)
+      value
+      (throw (ex-info (str "Validation failed for field " name)
+                      {:field name
+                       :spec spec
+                       :value value
+                       :errors (m/explain spec value)})))))
 
-(defn malli-schema->fields
-  "Convert a Malli :map schema to a vector of field definitions.
+(defn validate-inputs
+  "Validate all input fields against their Malli specs.
   
   Parameters:
-  - schema: A Malli schema (typically a :map schema)
-  
-  Returns a vector of field maps with :name, :type, and :description."
-  [schema]
-  (when schema
-    (let [parsed (m/schema schema)
-          properties (m/properties parsed)
-          children (m/children parsed)]
-      (mapv (fn [[prop-name _props prop-schema]]
-              (malli-schema->field prop-name prop-schema))
-            children))))
-
-(defn normalize-module
-  "Normalize a module definition to use field vectors.
-  
-  If the module uses Malli schemas (:input-schema, :output-schema),
-  convert them to field vectors (:inputs, :outputs).
-  
-  Parameters:
-  - module: Module definition (can use either field vectors or Malli schemas)
-  
-  Returns a normalized module with :inputs and :outputs as field vectors."
-  [module]
-  (let [inputs (or (:inputs module)
-                   (when-let [schema (:input-schema module)]
-                     (malli-schema->fields schema)))
-        outputs (or (:outputs module)
-                    (when-let [schema (:output-schema module)]
-                      (malli-schema->fields schema)))]
-    (assoc module
-           :inputs inputs
-           :outputs outputs)))
-
-(defn validate-input
-  "Validate input data against module's input schema (if using Malli).
-  
-  Parameters:
-  - module: Module definition with optional :input-schema
-  - input-map: Map of input field names to values
+  - fields: Vector of field definitions with :name, :spec, :description
+  - input-map: Map of field names to values
   
   Returns input-map if valid, throws exception if invalid."
-  [module input-map]
-  (if-let [schema (:input-schema module)]
-    (if (m/validate schema input-map)
-      input-map
-      (throw (ex-info "Input validation failed"
-                      {:errors (m/explain schema input-map)
-                       :input input-map})))
-    input-map))
+  [fields input-map]
+  (doseq [field fields]
+    (let [{:keys [name spec]} field]
+      (when spec
+        (when-let [value (get input-map name)]
+          (validate-field field value)))))
+  input-map)
 
-(defn validate-output
-  "Validate output data against module's output schema (if using Malli).
+(defn validate-outputs
+  "Validate all output fields against their Malli specs.
   
   Parameters:
-  - module: Module definition with optional :output-schema
-  - output-map: Map of output field names to values
+  - fields: Vector of field definitions with :name, :spec, :description
+  - output-map: Map of field names to values
   
   Returns output-map if valid, throws exception if invalid."
-  [module output-map]
-  (if-let [schema (:output-schema module)]
-    (if (m/validate schema output-map)
-      output-map
-      (throw (ex-info "Output validation failed"
-                      {:errors (m/explain schema output-map)
-                       :output output-map})))
-    output-map))
+  [fields output-map]
+  (doseq [field fields]
+    (let [{:keys [name spec]} field]
+      (when spec
+        (when-let [value (get output-map name)]
+          (validate-field field value)))))
+  output-map)
 
 ;; =============================================================================
 ;; Core Functions
@@ -124,9 +82,9 @@
 (defn module->prompt
   "Convert a module signature/schema into a prompt template.
   
-  A module is a map with either:
-  - :inputs/:outputs - Vectors of field definitions with :name, :type, :description keys
-  - :input-schema/:output-schema - Malli schemas defining the structure
+  A module is a map with:
+  - :inputs - Vector of field definitions with :name, :spec, :description keys
+  - :outputs - Vector of field definitions with :name, :spec, :description keys
   - :instructions - Optional string describing the task instructions, rules, and examples
   
   Example:
@@ -134,10 +92,10 @@
   
   Returns a formatted prompt string."
   [module]
-  (let [normalized (normalize-module module)
-        {:keys [inputs outputs instructions]} normalized]
-    (let [format-field (fn [idx {:keys [name type description]}]
-                         (str (inc idx) ". `" (clojure.core/name name) "` (" type "): " description))
+  (let [{:keys [inputs outputs instructions]} module
+        format-field (fn [idx {:keys [name spec description]}]
+                       (let [type-str (spec->type-str spec)]
+                         (str (inc idx) ". `" (clojure.core/name name) "` (" type-str "): " description)))
         
         ;; Input fields section
         input-section (when (seq inputs)
@@ -157,20 +115,21 @@
                                       (for [{:keys [name]} inputs]
                                         (str "[[ ## " (clojure.core/name name) " ## ]]\n"
                                              "{" (clojure.core/name name) "}"))
-                                      (for [{:keys [name type]} outputs]
-                                        (str "[[ ## " (clojure.core/name name) " ## ]]\n"
-                                             "{" (clojure.core/name name) "}"
-                                             (when (= type "bool")
-                                               "        # note: the value you produce must be True or False")))))))
+                                      (for [{:keys [name spec]} outputs]
+                                        (let [type-str (spec->type-str spec)]
+                                          (str "[[ ## " (clojure.core/name name) " ## ]]\n"
+                                               "{" (clojure.core/name name) "}"
+                                               (when (= type-str "bool")
+                                                 "        # note: the value you produce must be True or False"))))))))
         
         ;; Instructions section
         instructions-section (when instructions
                                (str "[[ ## completed ## ]]\n"
                                     "In adhering to this structure, your instructions are: " instructions))
         
-          ;; Combine all sections
-          sections (filter some? [input-section output-section interaction-format instructions-section])]
-      (str/join "\n" sections))))
+        ;; Combine all sections
+        sections (filter some? [input-section output-section interaction-format instructions-section])]
+    (str/join "\n" sections)))
 
 (defn parse-output
   "Parse LLM output based on module's output field definitions.
@@ -182,8 +141,8 @@
   Returns a map with field names as keys and parsed values.
   
   Example:
-    (parse-output llm-response {:outputs [{:name :answer :type \"str\"}
-                                          {:name :confidence :type \"bool\"}]})"
+    (parse-output llm-response {:outputs [{:name :answer :spec :string}
+                                          {:name :confidence :spec :boolean}]})"
   [response {:keys [outputs]}]
   (let [;; Extract content between [[ ## field_name ## ]] or [[##field_name##]] markers
         extract-field (fn [field-name text]
@@ -207,44 +166,42 @@
 
 
     (into {}
-          (for [{:keys [name type]} outputs]
-            (let [raw-value (extract-field name response)
-                  converted-value (convert-type raw-value type)]
+          (for [{:keys [name spec]} outputs]
+            (let [type-str (spec->type-str spec)
+                  raw-value (extract-field name response)
+                  converted-value (convert-type raw-value type-str)]
               [name converted-value])))))
 
 (defn predict
   "Make a prediction using an LLM.
   
   Parameters:
-  - module: The module definition with :inputs/:outputs or :input-schema/:output-schema
+  - module: The module definition with :inputs/:outputs fields containing :spec for Malli schemas
   - input-map: Map of input field names to values
   - options: Optional configuration map (e.g., :model, :temperature, :validate?)
   
   Options:
   - :model - LLM model to use
   - :temperature - Temperature for sampling
-  - :validate? - Whether to validate inputs/outputs with Malli (default: true if schemas present)
+  - :validate? - Whether to validate inputs/outputs with Malli specs (default: true)
   
   Returns parsed output as a map based on module's output fields.
   
   Example:
     (predict qa-module {:question \"What is 2+2?\"} {:model \"gpt-4\"})"
   [module input-map & [options]]
-  (let [;; Validate input if Malli schema is present
+  (let [;; Validate inputs if requested
         should-validate? (get options :validate? true)
-        validated-input (if (and should-validate? (:input-schema module))
-                         (validate-input module input-map)
+        validated-input (if should-validate?
+                         (validate-inputs (:inputs module) input-map)
                          input-map)
         
-        ;; Normalize module to use field vectors
-        normalized (normalize-module module)
-        
         ;; Generate base prompt from module
-        base-prompt (module->prompt normalized)
+        base-prompt (module->prompt module)
         
         ;; Add input values to the prompt
         input-section (str/join "\n\n"
-                                (for [{:keys [name]} (:inputs normalized)]
+                                (for [{:keys [name]} (:inputs module)]
                                   (str "[[ ## " (clojure.core/name name) " ## ]]\n"
                                        (get validated-input name ""))))
         
@@ -263,10 +220,10 @@
                                  first
                                  :message
                                  :content)
-                             normalized)
+                             module)
         
-        ;; Validate output if Malli schema is present
-        validated-output (if (and should-validate? (:output-schema module))
-                          (validate-output module parsed)
+        ;; Validate outputs if requested
+        validated-output (if should-validate?
+                          (validate-outputs (:outputs module) parsed)
                           parsed)]
     validated-output))

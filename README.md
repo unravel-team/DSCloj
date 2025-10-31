@@ -30,13 +30,13 @@ DSCloj works by defining **modules** - declarative specifications of LLM tasks w
 ```clojure
 (require '[dscloj.core :as dscloj])
 
-;; 1. Define a module
+;; 1. Define a module with Malli specs
 (def qa-module
   {:inputs [{:name :question
-             :type "str"
+             :spec :string
              :description "The question to answer"}]
    :outputs [{:name :answer
-              :type "str"
+              :spec :string
               :description "The answer to the question"}]
    :instructions "Provide concise and accurate answers."})
 
@@ -53,71 +53,86 @@ DSCloj works by defining **modules** - declarative specifications of LLM tasks w
 
 ### Key Concepts
 
-**Modules** are maps with either:
-- **Field Vectors** (traditional):
-  - `:inputs` - Vector of input field definitions
-  - `:outputs` - Vector of output field definitions
-- **Malli Schemas** (recommended):
-  - `:input-schema` - Malli schema defining input structure
-  - `:output-schema` - Malli schema defining output structure
+**Modules** are maps with:
+- `:inputs` - Vector of input field definitions
+- `:outputs` - Vector of output field definitions
 - `:instructions` - Optional string describing the task instructions, rules, and examples
 
-**Fields** (when using field vectors) are maps with:
+**Fields** are maps with:
 - `:name` - Keyword identifier
-- `:type` - String type ("str", "int", "float", "bool")
+- `:spec` - Malli spec (e.g., `:string`, `:int`, `:double`, `:boolean`, or more complex specs like `[:int {:min 0 :max 100}]`)
 - `:description` - Human-readable description
 
 The `predict` function:
-1. Validates input data (if using Malli schemas)
+1. Validates input data against Malli specs
 2. Generates a prompt from the module specification
 3. Injects your input values
 4. Calls the LLM
 5. Parses and type-converts the output
-6. Validates output data (if using Malli schemas)
+6. Validates output data against Malli specs
 
-### Malli Schema Support
+### Malli Spec Support
 
-DSCloj supports [Malli](https://github.com/metosin/malli) schemas for defining module inputs and outputs with automatic validation:
+DSCloj uses [Malli](https://github.com/metosin/malli) specs for defining field types with automatic validation:
 
 ```clojure
-(require '[malli.core :as m])
-
-;; Define a module with Malli schemas
-(def qa-module-malli
-  {:input-schema [:map
-                  [:question [:string {:description "The question to answer"}]]]
-   :output-schema [:map
-                   [:answer [:string {:description "The answer"}]]]
+;; Simple specs
+(def qa-module
+  {:inputs [{:name :question
+             :spec :string
+             :description "The question to answer"}]
+   :outputs [{:name :answer
+              :spec :string
+              :description "The answer"}]
    :instructions "Provide concise and accurate answers."})
 
-;; Use it just like traditional modules
-(def result (dscloj/predict qa-module-malli 
-                            {:question "What is the capital of France?"}
-                            {:model "gpt-4"
-                             :api-key (System/getenv "OPENAI_API_KEY")}))
+;; Complex specs with constraints
+(def constrained-module
+  {:inputs [{:name :age
+             :spec [:int {:min 0 :max 150}]}
+            {:name :email
+             :spec [:string {:pattern #"^[^@]+@[^@]+$"}]}]
+   :outputs [{:name :message
+              :spec :string}]})
+
+;; Reusable specs
+(def QuestionSpec [:string {:min 1 :description "The question"}])
+(def AnswerSpec [:string {:min 1 :description "The answer"}])
+
+(def module-with-reusable-specs
+  {:inputs [{:name :question :spec QuestionSpec}]
+   :outputs [{:name :answer :spec AnswerSpec}]})
 
 ;; Invalid inputs/outputs are automatically validated
-(dscloj/predict qa-module-malli 
+(dscloj/predict qa-module 
                {:question 123}  ; Throws validation error - should be string
                {:model "gpt-4"})
+
+;; Disable validation if needed
+(dscloj/predict qa-module 
+               {:question "..."}
+               {:model "gpt-4"
+                :validate? false})  ; Skip validation
 ```
 
-**Benefits of Malli Schemas:**
+**Benefits of Malli Specs:**
 - Type safety with automatic validation
-- Reusable schema definitions
+- Constraints (min/max, regex, custom validators)
+- Reusable spec definitions
 - Detailed error messages for debugging
 - Better IDE support and autocomplete
-- Backward compatible with field vectors
+- Flexible (can disable validation when needed)
 
 ### More Examples
 
 See [`examples/basic_usage.clj`](examples/basic_usage.clj) for:
-- Simple Q&A modules (with and without Malli schemas)
+- Simple Q&A modules
 - Translation with custom LLM options
 - Multiple output types (bool, float, str)
-- Malli schema validation and error handling
-- Schema reusability
-- Backward compatibility
+- Complex Malli specs with constraints
+- Validation and error handling
+- Spec reusability
+- Disabling validation
 - Inspecting generated prompts
 
 ### Supported LLM Providers

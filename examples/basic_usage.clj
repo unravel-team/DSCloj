@@ -8,19 +8,21 @@
 
 (def qa-module
   {:inputs [{:name :question
-             :type "str"
+             :spec :string
              :description "The question to answer"}]
    :outputs [{:name :answer
-              :type "str"
+              :spec :string
               :description "The answer to the question"}]
    :instructions "Provide concise and accurate answers."})
 
 (comment
   ;; Call predict - it handles everything automatically:
   ;; - Generates prompt from module
+  ;; - Validates inputs against Malli specs
   ;; - Injects input values
   ;; - Calls LLM
   ;; - Parses output
+  ;; - Validates outputs against Malli specs
   (def result (dscloj/predict qa-module 
                               {:question "What is the capital of France?"}
                               {:model "gpt-4"
@@ -28,34 +30,10 @@
   
   (:answer result)
   ;; => "Paris"
-  )
-
-
-;; =============================================================================
-;; EXAMPLE 2: Simple Q&A Module with Malli Schemas
-;; =============================================================================
-
-(def qa-module-malli
-  {:input-schema [:map
-                  [:question [:string {:description "The question to answer"}]]]
-   :output-schema [:map
-                   [:answer [:string {:description "The answer to the question"}]]]
-   :instructions "Provide concise and accurate answers."})
-
-(comment
-  ;; This module works identically to the traditional field-based approach
-  ;; but with automatic validation
-  (def result (dscloj/predict qa-module-malli 
-                              {:question "What is the capital of France?"}
-                              {:model "gpt-4"
-                               :api-key (System/getenv "OPENAI_API_KEY")}))
   
-  (:answer result)
-  ;; => "Paris"
-  
-  ;; Invalid input will throw an exception
+  ;; Invalid input will throw a validation exception
   (try
-    (dscloj/predict qa-module-malli 
+    (dscloj/predict qa-module 
                    {:question 123}  ; Should be a string
                    {:model "gpt-4"
                     :api-key (System/getenv "OPENAI_API_KEY")})
@@ -65,18 +43,18 @@
 
 
 ;; =============================================================================
-;; EXAMPLE 3: Custom LLM Options
+;; EXAMPLE 2: Custom LLM Options
 ;; =============================================================================
 
 (def translation-module
   {:inputs [{:name :text
-             :type "str"
+             :spec :string
              :description "Text to translate"}
             {:name :target_language
-             :type "str"
+             :spec :string
              :description "Target language"}]
    :outputs [{:name :translation
-              :type "str"
+              :spec :string
               :description "Translated text"}]
    :instructions "Translate text accurately."})
 
@@ -96,21 +74,21 @@
 
 
 ;; =============================================================================
-;; EXAMPLE 4: Multiple Output Types (bool, float, str)
+;; EXAMPLE 3: Multiple Output Types (bool, float, str)
 ;; =============================================================================
 
 (def qa-with-confidence-module
   {:inputs [{:name :question
-             :type "str"
+             :spec :string
              :description "Question to answer"}]
    :outputs [{:name :answer
-              :type "str"
+              :spec :string
               :description "The answer"}
              {:name :is_confident
-              :type "bool"
+              :spec :boolean
               :description "Whether the answer is confident"}
              {:name :confidence_score
-              :type "float"
+              :spec :double
               :description "Confidence from 0.0 to 1.0"}]
    :instructions "Answer with confidence assessment."})
 
@@ -121,7 +99,7 @@
                    {:model "gpt-4"
                     :api-key (System/getenv "OPENAI_API_KEY")}))
   
-  ;; Types are automatically converted
+  ;; Types are automatically converted and validated
   (:is_confident qa-result)     ;; => true (boolean)
   (:confidence_score qa-result) ;; => 0.95 (float)
   (:answer qa-result)           ;; => "The speed of light is..."
@@ -134,17 +112,25 @@
 
 
 ;; =============================================================================
-;; EXAMPLE 5: Multiple Types with Malli Validation
+;; EXAMPLE 4: Complex Malli Specs with Constraints
 ;; =============================================================================
 
 (def analysis-module
-  {:input-schema [:map
-                  [:text [:string {:description "Text to analyze"}]]
-                  [:min_length [:int {:description "Minimum length requirement"}]]]
-   :output-schema [:map
-                   [:summary [:string {:description "Summary of the text"}]]
-                   [:is_valid [:boolean {:description "Whether text meets requirements"}]]
-                   [:confidence [:double {:description "Confidence score 0.0-1.0"}]]]
+  {:inputs [{:name :text
+             :spec [:string {:min 1}]
+             :description "Text to analyze"}
+            {:name :min_length
+             :spec [:int {:min 0}]
+             :description "Minimum length requirement"}]
+   :outputs [{:name :summary
+              :spec :string
+              :description "Summary of the text"}
+             {:name :is_valid
+              :spec :boolean
+              :description "Whether text meets requirements"}
+             {:name :confidence
+              :spec [:double {:min 0.0 :max 1.0}]
+              :description "Confidence score 0.0-1.0"}]
    :instructions "Analyze the text and check if it meets the minimum length requirement."})
 
 (comment
@@ -155,7 +141,7 @@
                    {:model "gpt-4"
                     :api-key (System/getenv "OPENAI_API_KEY")}))
   
-  ;; All outputs are type-validated
+  ;; All outputs are type-validated against Malli specs
   (:summary analysis-result)      ;; => string
   (:is_valid analysis-result)     ;; => boolean
   (:confidence analysis-result)   ;; => double (0.0-1.0)
@@ -163,40 +149,15 @@
 
 
 ;; =============================================================================
-;; EXAMPLE 6: Backward Compatibility - Mixing Schemas and Field Vectors
-;; =============================================================================
-
-;; Field vectors take precedence over schemas if both are provided
-(def mixed-module
-  {:inputs [{:name :question
-             :type "str"
-             :description "The question"}]
-   :input-schema [:map
-                  [:schema_field [:string {:description "This will be ignored"}]]]
-   :outputs [{:name :answer
-              :type "str"
-              :description "The answer"}]
-   :instructions "Answer the question."})
-
-(comment
-  ;; This will use the :inputs/:outputs field vectors
-  (dscloj/predict mixed-module
-                 {:question "What is 2+2?"}
-                 {:model "gpt-4"
-                  :api-key (System/getenv "OPENAI_API_KEY")})
-  )
-
-
-;; =============================================================================
-;; EXAMPLE 7: Disabling Validation
+;; EXAMPLE 5: Disabling Validation
 ;; =============================================================================
 
 ;; Sometimes you might want to skip validation (e.g., for debugging)
 (def strict-module
-  {:input-schema [:map
-                  [:number [:int {:min 1 :max 100}]]]
-   :output-schema [:map
-                   [:result [:string]]]
+  {:inputs [{:name :number
+             :spec [:int {:min 1 :max 100}]}]
+   :outputs [{:name :result
+              :spec :string}]
    :instructions "Process the number."})
 
 (comment
@@ -217,41 +178,29 @@
 
 
 ;; =============================================================================
-;; EXAMPLE 8: Inspecting Modules and Generated Prompts
+;; EXAMPLE 6: Inspecting Modules and Generated Prompts
 ;; =============================================================================
 
 (comment
-  ;; View the prompt template for traditional modules
+  ;; View the prompt template
   (def prompt-template (dscloj/module->prompt qa-module))
   (println prompt-template)
-  
-  ;; Malli schemas are automatically converted to field vectors for prompting
-  (def normalized (dscloj/normalize-module qa-module-malli))
-  
-  ;; Check the converted fields
-  (:inputs normalized)
-  ;; => [{:name :question, :type "str", :description "The question to answer"}]
-  
-  (:outputs normalized)
-  ;; => [{:name :answer, :type "str", :description "The answer to the question"}]
-  
-  ;; View the generated prompt
-  (println (dscloj/module->prompt qa-module-malli))
   
   ;; Useful for debugging what's sent to the LLM
   )
 
 
 ;; =============================================================================
-;; EXAMPLE 9: Working with Validation Errors
+;; EXAMPLE 7: Working with Validation Errors
 ;; =============================================================================
 
 (def typed-module
-  {:input-schema [:map
-                  [:age [:int {:min 0 :max 150}]]
-                  [:name [:string {:min-length 1}]]]
-   :output-schema [:map
-                   [:message [:string]]]})
+  {:inputs [{:name :age
+             :spec [:int {:min 0 :max 150}]}
+            {:name :name
+             :spec [:string {:min 1}]}]
+   :outputs [{:name :message
+              :spec :string}]})
 
 (comment
   ;; This will throw a validation error with details
@@ -265,31 +214,32 @@
       (let [data (ex-data e)]
         (println "Error:" (.getMessage e))
         (println "Details:" (:errors data))
-        (println "Input:" (:input data)))))
+        (println "Field:" (:field data))
+        (println "Value:" (:value data)))))
   
   ;; Validation errors are detailed and helpful
   )
 
 
 ;; =============================================================================
-;; EXAMPLE 10: Schema Reusability
+;; EXAMPLE 8: Reusable Specs
 ;; =============================================================================
 
-;; Define reusable schemas
-(def QuestionInput
-  [:map
-   [:question [:string {:description "The question to answer"}]]
-   [:context {:optional true} [:string {:description "Additional context"}]]])
-
-(def AnswerOutput
-  [:map
-   [:answer [:string {:description "The answer"}]]
-   [:confidence [:double {:description "Confidence score"}]]])
+;; Define reusable Malli specs
+(def QuestionSpec [:string {:min 1 :description "The question to answer"}])
+(def AnswerSpec [:string {:min 1 :description "The answer"}])
+(def ConfidenceSpec [:double {:min 0.0 :max 1.0 :description "Confidence score"}])
 
 (def qa-with-context-module
-  {:input-schema QuestionInput
-   :output-schema AnswerOutput
-   :instructions "Answer based on the question and context if provided."})
+  {:inputs [{:name :question
+             :spec QuestionSpec}
+            {:name :context
+             :spec [:string {:description "Additional context"}]}]
+   :outputs [{:name :answer
+              :spec AnswerSpec}
+             {:name :confidence
+              :spec ConfidenceSpec}]
+   :instructions "Answer based on the question and context."})
 
 (comment
   (dscloj/predict qa-with-context-module
@@ -299,14 +249,3 @@
                   :api-key (System/getenv "OPENAI_API_KEY")})
   )
 
-
-;; =============================================================================
-;; Benefits of Malli Schemas
-;; =============================================================================
-
-;; 1. Type Safety: Automatic validation of inputs and outputs
-;; 2. Reusability: Share schema definitions across modules
-;; 3. Documentation: Schemas serve as living documentation
-;; 4. IDE Support: Better autocomplete and type hints
-;; 5. Error Messages: Detailed validation errors help debugging
-;; 6. Backward Compatible: Works alongside traditional field vectors
