@@ -208,10 +208,9 @@
 
     (into {}
           (for [{:keys [name type]} outputs]
-            (do (println name type response)
-             (let [raw-value (extract-field name response)
-                   converted-value (convert-type raw-value type)]
-               [name converted-value]))))))
+            (let [raw-value (extract-field name response)
+                  converted-value (convert-type raw-value type)]
+              [name converted-value])))))
 
 (defn predict
   "Make a prediction using an LLM.
