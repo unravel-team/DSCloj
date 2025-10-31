@@ -1,7 +1,7 @@
 {:paths ["src" "resources" "examples"]
  :group-id "tech.unravel"
  :artifact-id "dscloj"
- :version "0.1.0-alpha"
+ :version "0.1.0-alpha.1"
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         tech.unravel/litellm-clj {:mvn/version "0.3.0-alpha"}
         metosin/malli {:mvn/version "0.16.4"}
