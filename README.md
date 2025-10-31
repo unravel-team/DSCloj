@@ -111,9 +111,14 @@ DSCloj supports [Malli](https://github.com/metosin/malli) schemas for defining m
 
 ### More Examples
 
-See the [`examples/`](examples/) directory for:
-- **basic_usage.clj**: Simple Q&A modules, financial comparison with instructions and rules, translation with custom LLM options, multiple output types (bool, float, str), inspecting generated prompts
-- **malli_usage.clj**: Malli schema definitions, validation examples, schema reusability, error handling, backward compatibility
+See [`examples/basic_usage.clj`](examples/basic_usage.clj) for:
+- Simple Q&A modules (with and without Malli schemas)
+- Translation with custom LLM options
+- Multiple output types (bool, float, str)
+- Malli schema validation and error handling
+- Schema reusability
+- Backward compatibility
+- Inspecting generated prompts
 
 ### Supported LLM Providers
 

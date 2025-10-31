@@ -1,5 +1,6 @@
 (ns examples.basic-usage
-  (:require [dscloj.core :as dscloj]))
+  (:require [dscloj.core :as dscloj]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; EXAMPLE 1: Simple Q&A Module
@@ -31,42 +32,35 @@
 
 
 ;; =============================================================================
-;; EXAMPLE 2: Financial Comparison with Rules
+;; EXAMPLE 2: Simple Q&A Module with Malli Schemas
 ;; =============================================================================
 
-(def financial-comparison-module
-  {:inputs [{:name :query 
-             :type "str"
-             :description "Current user query"}
-            {:name :data
-             :type "str"
-             :description "Fetched financial data"}]
-   :outputs [{:name :reasoning
-              :type "str"
-              :description "Brief explanation of the comparison"}
-             {:name :summary
-              :type "str"
-              :description "Summary in markdown"}
-             {:name :recommendation
-              :type "str"
-              :description "Investment recommendation"}]
-   :instructions (str "Compare financial instruments based on provided data.\n\n"
-                      "STRICT RULES:\n"
-                      "1. ONLY use data provided in the input\n"
-                      "2. Never make up financial information\n"
-                      "3. Be clear about risks and limitations")})
+(def qa-module-malli
+  {:input-schema [:map
+                  [:question [:string {:description "The question to answer"}]]]
+   :output-schema [:map
+                   [:answer [:string {:description "The answer to the question"}]]]
+   :instructions "Provide concise and accurate answers."})
 
 (comment
-  (def fin-result 
-    (dscloj/predict financial-comparison-module
-                   {:query "Compare HDFC Bank FD vs SBI FD"
-                    :data "HDFC Bank FD: 7.0% interest, 5 years\nSBI FD: 6.8% interest, 5 years"}
-                   {:model "gpt-4"
-                    :api-key (System/getenv "OPENAI_API_KEY")}))
+  ;; This module works identically to the traditional field-based approach
+  ;; but with automatic validation
+  (def result (dscloj/predict qa-module-malli 
+                              {:question "What is the capital of France?"}
+                              {:model "gpt-4"
+                               :api-key (System/getenv "OPENAI_API_KEY")}))
   
-  (:reasoning fin-result)
-  (:summary fin-result)
-  (:recommendation fin-result)
+  (:answer result)
+  ;; => "Paris"
+  
+  ;; Invalid input will throw an exception
+  (try
+    (dscloj/predict qa-module-malli 
+                   {:question 123}  ; Should be a string
+                   {:model "gpt-4"
+                    :api-key (System/getenv "OPENAI_API_KEY")})
+    (catch Exception e
+      (println "Validation error:" (.getMessage e))))
   )
 
 
@@ -140,13 +134,179 @@
 
 
 ;; =============================================================================
-;; EXAMPLE 5: Inspecting Generated Prompts
+;; EXAMPLE 5: Multiple Types with Malli Validation
+;; =============================================================================
+
+(def analysis-module
+  {:input-schema [:map
+                  [:text [:string {:description "Text to analyze"}]]
+                  [:min_length [:int {:description "Minimum length requirement"}]]]
+   :output-schema [:map
+                   [:summary [:string {:description "Summary of the text"}]]
+                   [:is_valid [:boolean {:description "Whether text meets requirements"}]]
+                   [:confidence [:double {:description "Confidence score 0.0-1.0"}]]]
+   :instructions "Analyze the text and check if it meets the minimum length requirement."})
+
+(comment
+  (def analysis-result 
+    (dscloj/predict analysis-module
+                   {:text "This is a sample text for analysis."
+                    :min_length 10}
+                   {:model "gpt-4"
+                    :api-key (System/getenv "OPENAI_API_KEY")}))
+  
+  ;; All outputs are type-validated
+  (:summary analysis-result)      ;; => string
+  (:is_valid analysis-result)     ;; => boolean
+  (:confidence analysis-result)   ;; => double (0.0-1.0)
+  )
+
+
+;; =============================================================================
+;; EXAMPLE 6: Backward Compatibility - Mixing Schemas and Field Vectors
+;; =============================================================================
+
+;; Field vectors take precedence over schemas if both are provided
+(def mixed-module
+  {:inputs [{:name :question
+             :type "str"
+             :description "The question"}]
+   :input-schema [:map
+                  [:schema_field [:string {:description "This will be ignored"}]]]
+   :outputs [{:name :answer
+              :type "str"
+              :description "The answer"}]
+   :instructions "Answer the question."})
+
+(comment
+  ;; This will use the :inputs/:outputs field vectors
+  (dscloj/predict mixed-module
+                 {:question "What is 2+2?"}
+                 {:model "gpt-4"
+                  :api-key (System/getenv "OPENAI_API_KEY")})
+  )
+
+
+;; =============================================================================
+;; EXAMPLE 7: Disabling Validation
+;; =============================================================================
+
+;; Sometimes you might want to skip validation (e.g., for debugging)
+(def strict-module
+  {:input-schema [:map
+                  [:number [:int {:min 1 :max 100}]]]
+   :output-schema [:map
+                   [:result [:string]]]
+   :instructions "Process the number."})
+
+(comment
+  ;; With validation (default)
+  (dscloj/predict strict-module
+                 {:number 50}
+                 {:model "gpt-4"
+                  :validate? true  ; This is the default
+                  :api-key (System/getenv "OPENAI_API_KEY")})
+  
+  ;; Without validation
+  (dscloj/predict strict-module
+                 {:number 50}
+                 {:model "gpt-4"
+                  :validate? false  ; Skip Malli validation
+                  :api-key (System/getenv "OPENAI_API_KEY")})
+  )
+
+
+;; =============================================================================
+;; EXAMPLE 8: Inspecting Modules and Generated Prompts
 ;; =============================================================================
 
 (comment
-  ;; View the prompt template
+  ;; View the prompt template for traditional modules
   (def prompt-template (dscloj/module->prompt qa-module))
   (println prompt-template)
   
+  ;; Malli schemas are automatically converted to field vectors for prompting
+  (def normalized (dscloj/normalize-module qa-module-malli))
+  
+  ;; Check the converted fields
+  (:inputs normalized)
+  ;; => [{:name :question, :type "str", :description "The question to answer"}]
+  
+  (:outputs normalized)
+  ;; => [{:name :answer, :type "str", :description "The answer to the question"}]
+  
+  ;; View the generated prompt
+  (println (dscloj/module->prompt qa-module-malli))
+  
   ;; Useful for debugging what's sent to the LLM
   )
+
+
+;; =============================================================================
+;; EXAMPLE 9: Working with Validation Errors
+;; =============================================================================
+
+(def typed-module
+  {:input-schema [:map
+                  [:age [:int {:min 0 :max 150}]]
+                  [:name [:string {:min-length 1}]]]
+   :output-schema [:map
+                   [:message [:string]]]})
+
+(comment
+  ;; This will throw a validation error with details
+  (try
+    (dscloj/predict typed-module
+                   {:age "not-a-number"  ; Invalid: should be int
+                    :name "John"}
+                   {:model "gpt-4"
+                    :api-key (System/getenv "OPENAI_API_KEY")})
+    (catch clojure.lang.ExceptionInfo e
+      (let [data (ex-data e)]
+        (println "Error:" (.getMessage e))
+        (println "Details:" (:errors data))
+        (println "Input:" (:input data)))))
+  
+  ;; Validation errors are detailed and helpful
+  )
+
+
+;; =============================================================================
+;; EXAMPLE 10: Schema Reusability
+;; =============================================================================
+
+;; Define reusable schemas
+(def QuestionInput
+  [:map
+   [:question [:string {:description "The question to answer"}]]
+   [:context {:optional true} [:string {:description "Additional context"}]]])
+
+(def AnswerOutput
+  [:map
+   [:answer [:string {:description "The answer"}]]
+   [:confidence [:double {:description "Confidence score"}]]])
+
+(def qa-with-context-module
+  {:input-schema QuestionInput
+   :output-schema AnswerOutput
+   :instructions "Answer based on the question and context if provided."})
+
+(comment
+  (dscloj/predict qa-with-context-module
+                 {:question "What is the capital?"
+                  :context "We are discussing France."}
+                 {:model "gpt-4"
+                  :api-key (System/getenv "OPENAI_API_KEY")})
+  )
+
+
+;; =============================================================================
+;; Benefits of Malli Schemas
+;; =============================================================================
+
+;; 1. Type Safety: Automatic validation of inputs and outputs
+;; 2. Reusability: Share schema definitions across modules
+;; 3. Documentation: Schemas serve as living documentation
+;; 4. IDE Support: Better autocomplete and type hints
+;; 5. Error Messages: Detailed validation errors help debugging
+;; 6. Backward Compatible: Works alongside traditional field vectors
