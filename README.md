@@ -4,8 +4,8 @@ A Clojure library inspired by [DSPy](https://github.com/stanfordnlp/dspy), provi
 
 DSCloj leverages [litellm-clj](https://github.com/unravel-team/litellm-clj) to provide a unified interface for working with various LLM providers while bringing DSPy's powerful programming model to the Clojure ecosystem.
 
-[![Clojars Project](https://img.shields.io/clojars/v/io.unravel/dscloj.svg)](https://clojars.org/tech.unravel/dscloj)
-[![cljdoc badge](https://cljdoc.org/badge/io.unravel/dscloj)](https://cljdoc.org/d/tech.unravel/dscloj)
+[![Clojars Project](https://img.shields.io/clojars/v/tech.unravel/dscloj.svg)](https://clojars.org/tech.unravel/dscloj)
+[![cljdoc badge](https://cljdoc.org/badge/tech.unravel/dscloj)](https://cljdoc.org/d/tech.unravel/dscloj)
 [![Lint Status](https://github.com/unravel-team/DSCloj/actions/workflows/lint.yml/badge.svg)](https://github.com/unravel-team/DSCloj/actions)
 [![Test Status](https://github.com/unravel-team/DSCloj/actions/workflows/test.yml/badge.svg)](https://github.com/unravel-team/DSCloj/actions)
 
