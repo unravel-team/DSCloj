@@ -19,10 +19,10 @@
   (testing "Basic Q&A with OpenAI API"
     (when api-key-available?
       (let [qa-module {:inputs [{:name :question
-                                 :type "str"
+                                 :spec :string
                                  :description "A question to answer"}]
                        :outputs [{:name :answer
-                                  :type "str"
+                                  :spec :string
                                   :description "The answer to the question"}]
                        :instructions "Answer the question accurately and concisely."}
             result (dscloj/predict qa-module 
@@ -39,10 +39,10 @@
   (testing "Boolean output parsing with OpenAI API"
     (when api-key-available?
       (let [validator-module {:inputs [{:name :statement
-                                        :type "str"
+                                        :spec :string
                                         :description "A statement to verify"}]
                               :outputs [{:name :is_true
-                                         :type "bool"
+                                         :spec :boolean
                                          :description "Whether the statement is true or false"}]
                               :instructions "Determine if the statement is true or false."}
             result (dscloj/predict validator-module
@@ -59,22 +59,23 @@
   (testing "Multiple outputs with different types"
     (when api-key-available?
       (let [analyzer-module {:inputs [{:name :text
-                                       :type "str"
+                                       :spec :string
                                        :description "Text to analyze"}]
                              :outputs [{:name :word_count
-                                        :type "int"
+                                        :spec :int
                                         :description "Number of words"}
                                        {:name :has_punctuation
-                                        :type "bool"
+                                        :spec :boolean
                                         :description "Whether text has punctuation"}
                                        {:name :summary
-                                        :type "str"
+                                        :spec :string
                                         :description "Brief summary"}]
                              :instructions "Analyze the text and provide word count, check for punctuation, and give a brief summary."}
             result (dscloj/predict analyzer-module
                                   {:text "Hello, world! This is a test."}
                                   {:model "gpt-3.5-turbo"
-                                   :api-key (System/getenv "OPENAI_API_KEY")                                                   :temperature 0})]
+                                   :api-key (System/getenv "OPENAI_API_KEY")
+                                   :temperature 0})]
         (is (map? result))
         (is (contains? result :word_count))
         (is (contains? result :has_punctuation))

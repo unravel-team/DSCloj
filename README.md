@@ -30,13 +30,13 @@ DSCloj works by defining **modules** - declarative specifications of LLM tasks w
 ```clojure
 (require '[dscloj.core :as dscloj])
 
-;; 1. Define a module
+;; 1. Define a module with Malli specs
 (def qa-module
   {:inputs [{:name :question
-             :type "str"
+             :spec :string
              :description "The question to answer"}]
    :outputs [{:name :answer
-              :type "str"
+              :spec :string
               :description "The answer to the question"}]
    :instructions "Provide concise and accurate answers."})
 
@@ -55,28 +55,134 @@ DSCloj works by defining **modules** - declarative specifications of LLM tasks w
 
 **Modules** are maps with:
 - `:inputs` - Vector of input field definitions
-- `:outputs` - Vector of output field definitions  
+- `:outputs` - Vector of output field definitions
 - `:instructions` - Optional string describing the task instructions, rules, and examples
 
 **Fields** are maps with:
 - `:name` - Keyword identifier
-- `:type` - String type ("str", "int", "float", "bool")
+- `:spec` - Malli spec (e.g., `:string`, `:int`, `:double`, `:boolean`, or more complex specs like `[:int {:min 0 :max 100}]`)
 - `:description` - Human-readable description
 
 The `predict` function:
-1. Generates a prompt from the module specification
-2. Injects your input values
-3. Calls the LLM
-4. Parses and type-converts the output
+1. Validates input data against Malli specs
+2. Generates a prompt from the module specification
+3. Injects your input values
+4. Calls the LLM
+5. Parses and type-converts the output
+6. Validates output data against Malli specs
+
+### Malli Spec Support
+
+DSCloj uses [Malli](https://github.com/metosin/malli) specs for defining field types with automatic validation:
+
+```clojure
+;; Simple specs
+(def qa-module
+  {:inputs [{:name :question
+             :spec :string
+             :description "The question to answer"}]
+   :outputs [{:name :answer
+              :spec :string
+              :description "The answer"}]
+   :instructions "Provide concise and accurate answers."})
+
+;; Complex specs with constraints
+(def constrained-module
+  {:inputs [{:name :age
+             :spec [:int {:min 0 :max 150}]}
+            {:name :email
+             :spec [:string {:pattern #"^[^@]+@[^@]+$"}]}]
+   :outputs [{:name :message
+              :spec :string}]})
+
+;; Reusable specs
+(def QuestionSpec [:string {:min 1 :description "The question"}])
+(def AnswerSpec [:string {:min 1 :description "The answer"}])
+
+(def module-with-reusable-specs
+  {:inputs [{:name :question :spec QuestionSpec}]
+   :outputs [{:name :answer :spec AnswerSpec}]})
+
+;; Invalid inputs/outputs are automatically validated
+(dscloj/predict qa-module 
+               {:question 123}  ; Throws validation error - should be string
+               {:model "gpt-4"})
+
+;; Disable validation if needed
+(dscloj/predict qa-module 
+               {:question "..."}
+               {:model "gpt-4"
+                :validate? false})  ; Skip validation
+```
+
+**Benefits of Malli Specs:**
+- Type safety with automatic validation
+- Constraints (min/max, regex, custom validators)
+- Reusable spec definitions
+- Detailed error messages for debugging
+- Better IDE support and autocomplete
+- Flexible (can disable validation when needed)
+
+### Streaming Support
+
+DSCloj supports **streaming structured output** with progressive parsing and validation:
+
+```clojure
+(require '[dscloj.core :as dscloj]
+         '[clojure.core.async :refer [go-loop <!]])
+
+;; Define a module with structured outputs
+(def whales-module
+  {:inputs [{:name :query :spec :string}]
+   :outputs [{:name :species_1_name :spec :string}
+             {:name :species_1_length :spec :double}
+             {:name :species_1_weight :spec :double}
+             ;; ... more fields
+             ]
+   :instructions "Generate whale species information."})
+
+;; Stream predictions
+(let [stream-ch (dscloj/predict-stream 
+                  whales-module
+                  {:query "Tell me about 3 whale species."}
+                  {:model "gpt-4"
+                   :api-key (System/getenv "OPENAI_API_KEY")
+                   :debounce-ms 100})]
+  
+  ;; Consume the stream progressively
+  (go-loop []
+    (when-let [parsed (<! stream-ch)]
+      (println "Received update:" parsed)
+      (recur))))
+```
+
+**Streaming Features:**
+- Progressive parsing as tokens arrive
+- Malli validation on final output (optional during stream)
+- Debouncing to control emission rate
+- core.async channels for composability
+- Optional callbacks for chunk processing
+
+See [`examples/streaming_whales.clj`](examples/streaming_whales.clj) for a complete example inspired by [Pydantic AI's streaming example](https://ai.pydantic.dev/examples/stream-whales/).
 
 ### More Examples
 
-See the [`examples/`](examples/) directory for:
+See [`examples/basic_usage.clj`](examples/basic_usage.clj) for:
 - Simple Q&A modules
-- Financial comparison with instructions and rules
 - Translation with custom LLM options
 - Multiple output types (bool, float, str)
+- Complex Malli specs with constraints
+- Validation and error handling
+- Spec reusability
+- Disabling validation
 - Inspecting generated prompts
+
+See [`examples/streaming_whales.clj`](examples/streaming_whales.clj) for:
+- Streaming structured output
+- Progressive parsing with Malli specs
+- Real-time data display
+- Handling optional fields during streaming
+- core.async channel usage
 
 ### Supported LLM Providers
 
@@ -95,4 +201,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- [LiteLLM](https://github.com/stanfordnlp/dspy) - The original Python library that inspired this port
+- [DSPy](https://github.com/stanfordnlp/dspy) - The original Python library that inspired this port
