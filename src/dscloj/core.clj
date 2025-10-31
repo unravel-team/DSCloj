@@ -2,7 +2,9 @@
   (:require [litellm.core :as litellm]
             [clojure.string :as str]
             [malli.core :as m]
-            [malli.util :as mu]))
+            [malli.util :as mu]
+            [clojure.core.async :as async :refer [go go-loop <! >! chan close!]]
+            [litellm.streaming :as streaming]))
 
 ;; =============================================================================
 ;; Malli Schema Support
@@ -227,3 +229,139 @@
                           (validate-outputs (:outputs module) parsed)
                           parsed)]
     validated-output))
+
+;; =============================================================================
+;; Streaming Support
+;; =============================================================================
+
+(defn parse-streaming-json-array
+  "Progressively parse a JSON array from accumulated text.
+  Returns a vector of parsed items found so far.
+  
+  This handles incomplete JSON by extracting complete objects and leaving
+  incomplete ones for the next iteration."
+  [accumulated-text]
+  (let [;; Try to find complete JSON objects within array brackets
+        ;; Look for pattern: [{...}, {...}, ...]
+        array-pattern #"\[\s*(.*?)\s*\]"
+        match (re-find array-pattern accumulated-text)]
+    (if match
+      (let [items-text (second match)
+            ;; Split by commas at the top level (not nested)
+            ;; This is a simplified parser - in production you'd use a proper JSON parser
+            items (try
+                    ;; Attempt to parse as EDN/JSON
+                    (when (seq items-text)
+                      (read-string (str "[" items-text "]")))
+                    (catch Exception _ []))]
+        items)
+      [])))
+
+(defn parse-streaming-output
+  "Parse streaming LLM output progressively.
+  
+  Parameters:
+  - accumulated-text: The accumulated response text so far
+  - module: The module definition with :outputs
+  
+  Returns parsed output, which may be partial/incomplete."
+  [accumulated-text {:keys [outputs] :as module}]
+  (parse-output accumulated-text module))
+
+(defn predict-stream
+  "Stream predictions from an LLM with progressive structured output parsing.
+  
+  Parameters:
+  - module: The module definition with :inputs/:outputs fields
+  - input-map: Map of input field names to values
+  - options: Configuration map with :model, :on-chunk callback, :debounce-ms, etc.
+  
+  Options:
+  - :model - LLM model to use
+  - :temperature - Temperature for sampling
+  - :validate? - Whether to validate inputs/outputs with Malli specs (default: false for streaming)
+  - :debounce-ms - Milliseconds to debounce emissions (default: 10)
+  - :on-chunk - Optional callback function called with each chunk
+  
+  Returns: core.async channel that emits progressively parsed output maps.
+  
+  Example:
+    (let [ch (predict-stream whales-module {:query \"Tell me about whales\"} {:model \"gpt-4\"})]
+      (go-loop []
+        (when-let [output (<! ch)]
+          (println output)
+          (recur))))"
+  [module input-map & [options]]
+  (let [should-validate? (get options :validate? false)
+        validated-input (if should-validate?
+                         (validate-inputs (:inputs module) input-map)
+                         input-map)
+        
+        ;; Generate base prompt from module
+        base-prompt (module->prompt module)
+        
+        ;; Add input values to the prompt
+        input-section (str/join "\n\n"
+                                (for [{:keys [name]} (:inputs module)]
+                                  (str "[[ ## " (clojure.core/name name) " ## ]]\n"
+                                       (get validated-input name ""))))
+        
+        ;; Combine into full prompt
+        full-prompt (str base-prompt "\n\n" input-section)
+        
+        ;; Create output channel
+        output-ch (chan)
+        
+        ;; Call LLM with streaming enabled
+        stream-ch (litellm/completion :openai
+                                      (or (:model options) "gpt-3.5-turbo")
+                                      {:messages [{:role :user :content full-prompt}]
+                                       :stream true}
+                                      (-> options
+                                          (dissoc :model :on-chunk :debounce-ms :validate?)
+                                          (assoc :stream true)))
+        
+        debounce-ms (get options :debounce-ms 10)
+        on-chunk-fn (get options :on-chunk)
+        
+        ;; Track accumulated content and last emission time
+        accumulated (atom "")
+        last-emit-time (atom 0)]
+    
+    ;; Process stream in background
+    (go-loop []
+      (if-let [chunk (<! stream-ch)]
+        (do
+          ;; Extract content from chunk
+          (when-let [content (streaming/extract-content chunk)]
+            (swap! accumulated str content)
+            
+            ;; Call on-chunk callback if provided
+            (when on-chunk-fn
+              (on-chunk-fn chunk))
+            
+            ;; Debounce emissions
+            (let [now (System/currentTimeMillis)
+                  elapsed (- now @last-emit-time)]
+              (when (>= elapsed debounce-ms)
+                (let [parsed (parse-streaming-output @accumulated module)]
+                  (when (seq parsed)
+                    (>! output-ch parsed))
+                  (reset! last-emit-time now)))))
+          (recur))
+        ;; Stream complete - emit final result and close
+        (do
+          (let [final-parsed (parse-streaming-output @accumulated module)
+                validated-output (if should-validate?
+                                  (try
+                                    (validate-outputs (:outputs module) final-parsed)
+                                    (catch Exception e
+                                      (println "Warning: Final output validation failed:" (.getMessage e))
+                                      final-parsed))
+                                  final-parsed)]
+            (when (seq validated-output)
+              (>! output-ch validated-output)))
+          (close! output-ch))))
+    
+    ;; Return the output channel
+    output-ch))

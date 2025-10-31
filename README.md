@@ -123,6 +123,48 @@ DSCloj uses [Malli](https://github.com/metosin/malli) specs for defining field t
 - Better IDE support and autocomplete
 - Flexible (can disable validation when needed)
 
+### Streaming Support
+
+DSCloj supports **streaming structured output** with progressive parsing and validation:
+
+```clojure
+(require '[dscloj.core :as dscloj]
+         '[clojure.core.async :refer [go-loop <!]])
+
+;; Define a module with structured outputs
+(def whales-module
+  {:inputs [{:name :query :spec :string}]
+   :outputs [{:name :species_1_name :spec :string}
+             {:name :species_1_length :spec :double}
+             {:name :species_1_weight :spec :double}
+             ;; ... more fields
+             ]
+   :instructions "Generate whale species information."})
+
+;; Stream predictions
+(let [stream-ch (dscloj/predict-stream 
+                  whales-module
+                  {:query "Tell me about 3 whale species."}
+                  {:model "gpt-4"
+                   :api-key (System/getenv "OPENAI_API_KEY")
+                   :debounce-ms 100})]
+  
+  ;; Consume the stream progressively
+  (go-loop []
+    (when-let [parsed (<! stream-ch)]
+      (println "Received update:" parsed)
+      (recur))))
+```
+
+**Streaming Features:**
+- Progressive parsing as tokens arrive
+- Malli validation on final output (optional during stream)
+- Debouncing to control emission rate
+- core.async channels for composability
+- Optional callbacks for chunk processing
+
+See [`examples/streaming_whales.clj`](examples/streaming_whales.clj) for a complete example inspired by [Pydantic AI's streaming example](https://ai.pydantic.dev/examples/stream-whales/).
+
 ### More Examples
 
 See [`examples/basic_usage.clj`](examples/basic_usage.clj) for:
@@ -134,6 +176,13 @@ See [`examples/basic_usage.clj`](examples/basic_usage.clj) for:
 - Spec reusability
 - Disabling validation
 - Inspecting generated prompts
+
+See [`examples/streaming_whales.clj`](examples/streaming_whales.clj) for:
+- Streaming structured output
+- Progressive parsing with Malli specs
+- Real-time data display
+- Handling optional fields during streaming
+- core.async channel usage
 
 ### Supported LLM Providers
 

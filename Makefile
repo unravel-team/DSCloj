@@ -20,8 +20,7 @@ repl:
 
 nrepl:
 	@echo "Starting nREPL server on port 7888..."
-	clojure -Sdeps '{:deps {nrepl/nrepl {:mvn/version "1.1.0"} cider/cider-nrepl {:mvn/version "0.45.0"}}}' \
-		-M -m nrepl.cmdline --middleware '["cider.nrepl/cider-middleware"]' --port 7888
+	clojure -M:repl -m nrepl.cmdline --middleware '["cider.nrepl/cider-middleware"]' --port 7888
 
 test:
 	clojure -M:test -m kaocha.runner
