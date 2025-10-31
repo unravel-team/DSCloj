@@ -1,7 +1,6 @@
 (ns dscloj.core-test
   (:require [clojure.test :refer [deftest is testing]]
-            [dscloj.core :as dscloj]
-            [malli.core :as m]))
+            [dscloj.core :as dscloj]))
 
 (deftest module->prompt-test
   (testing "Basic prompt generation with inputs and outputs"

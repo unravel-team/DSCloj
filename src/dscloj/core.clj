@@ -2,8 +2,7 @@
   (:require [litellm.core :as litellm]
             [clojure.string :as str]
             [malli.core :as m]
-            [malli.util :as mu]
-            [clojure.core.async :as async :refer [go go-loop <! >! chan close!]]
+            [clojure.core.async :as async :refer [go-loop <! >! chan close!]]
             [litellm.streaming :as streaming]))
 
 ;; =============================================================================
@@ -265,7 +264,7 @@
   - module: The module definition with :outputs
   
   Returns parsed output, which may be partial/incomplete."
-  [accumulated-text {:keys [outputs] :as module}]
+  [accumulated-text module]
   (parse-output accumulated-text module))
 
 (defn predict-stream
