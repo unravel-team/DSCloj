@@ -33,15 +33,6 @@
   []
   (router/quick-setup!))
 
-(defn get-provider
-  "Retrieve a registered provider configuration by name.
-  
-  Parameters:
-  - config-name: Keyword identifier
-  
-  Returns the provider spec map or nil if not found."
-  [config-name]
-  (router/get-provider config-name))
 
 (defn list-providers
   "List all registered provider configurations.
@@ -222,10 +213,10 @@
   "Make a prediction using an LLM via the router API.
   
   Parameters:
-  - module: The module definition with :inputs/:outputs fields containing :spec for Malli schemas
-  - input-map: Map of input field names to values
   - provider-config: Either a keyword referencing a registered provider config, or a map with:
                      {:provider :openai :model \"gpt-4\" :config {:api-key \"...\"}}
+  - module: The module definition with :inputs/:outputs fields containing :spec for Malli schemas
+  - input-map: Map of input field names to values
   - options: Optional configuration map (e.g., :temperature, :validate?)
   
   Options:
@@ -238,13 +229,14 @@
   Examples:
     ;; Using registered provider
     (register-provider! :gpt4 {:provider :openai :model \"gpt-4\" :config {:api-key \"sk-...\"}})
-    (predict qa-module {:question \"What is 2+2?\"} :gpt4)
+    (predict :gpt4 qa-module {:question \"What is 2+2?\"})
     
     ;; Ad-hoc provider (no registration)
-    (predict qa-module {:question \"What is 2+2?\"}
-             {:provider :anthropic :model \"claude-3-5-sonnet-20241022\" 
-              :config {:api-key \"sk-...\"}})"
-  [module input-map provider-config & [options]]
+    (predict {:provider :anthropic :model \"claude-3-5-sonnet-20241022\" 
+              :config {:api-key \"sk-...\"}}
+             qa-module 
+             {:question \"What is 2+2?\"})"
+  [provider-config module input-map & [options]]
   (let [;; Validate inputs if requested
         should-validate? (get options :validate? true)
         validated-input (if should-validate?
@@ -324,10 +316,10 @@
   "Stream predictions from an LLM with progressive structured output parsing via router API.
   
   Parameters:
-  - module: The module definition with :inputs/:outputs fields
-  - input-map: Map of input field names to values
   - provider-config: Either a keyword referencing a registered provider config, or a map with:
                      {:provider :openai :model \"gpt-4\" :config {:api-key \"...\"}}
+  - module: The module definition with :inputs/:outputs fields
+  - input-map: Map of input field names to values
   - options: Configuration map with :on-chunk callback, :debounce-ms, etc.
   
   Options:
@@ -341,12 +333,12 @@
   Examples:
     ;; Using registered provider
     (register-provider! :gpt4 {:provider :openai :model \"gpt-4\" :config {:api-key \"sk-...\"}})
-    (let [ch (predict-stream whales-module {:query \"Tell me about whales\"} :gpt4)]
+    (let [ch (predict-stream :gpt4 whales-module {:query \"Tell me about whales\"})]
       (go-loop []
         (when-let [output (<! ch)]
           (println output)
           (recur))))"
-  [module input-map provider-config & [options]]
+  [provider-config module input-map & [options]]
   (let [should-validate? (get options :validate? false)
         validated-input (if should-validate?
                          (validate-inputs (:inputs module) input-map)
