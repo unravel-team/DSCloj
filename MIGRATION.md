@@ -14,7 +14,7 @@ DSCloj has migrated from using `litellm.core` to `litellm.router` for better pro
 (require '[dscloj.core :as dscloj])
 
 ;; Model and API key passed as options
-(dscloj/predict qa-module 
+(dscloj/predict :gpt4 qa-module 
                 {:question "What is the capital of France?"}
                 {:model "gpt-4"
                  :api-key (System/getenv "OPENAI_API_KEY")
@@ -32,13 +32,13 @@ DSCloj has migrated from using `litellm.core` to `litellm.router` for better pro
    :model "gpt-4" 
    :config {:api-key (System/getenv "OPENAI_API_KEY")}})
 
-(dscloj/predict qa-module 
+(dscloj/predict :gpt4 qa-module 
                 {:question "What is the capital of France?"}
                 :gpt4  ; provider-config (3rd argument)
                 {:temperature 0.7})  ; options (4th argument)
 
 ;; Option 2: Ad-hoc provider (no registration)
-(dscloj/predict qa-module 
+(dscloj/predict :gpt4 qa-module 
                 {:question "What is the capital of France?"}
                 {:provider :openai 
                  :model "gpt-4" 
@@ -104,8 +104,8 @@ Best for production code with multiple providers.
    :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
 
 ;; Use throughout your app
-(dscloj/predict qa-module input :gpt4)
-(dscloj/predict qa-module input :claude)
+(dscloj/predict :gpt4 qa-module input :gpt4)
+(dscloj/predict :gpt4 qa-module input :claude)
 ```
 
 #### Option B: Quick Setup
@@ -117,7 +117,7 @@ Best for quick prototyping with environment variables.
 (dscloj/quick-setup!)
 
 ;; Automatically registers :openai, :anthropic, :gemini, etc.
-(dscloj/predict qa-module input :openai)
+(dscloj/predict :gpt4 qa-module input :openai)
 ```
 
 #### Option C: Ad-hoc Providers
@@ -126,7 +126,7 @@ Best for one-off usage or testing.
 
 ```clojure
 ;; No setup needed - pass provider config directly
-(dscloj/predict qa-module 
+(dscloj/predict :gpt4 qa-module 
                 input
                 {:provider :openai 
                  :model "gpt-4" 
@@ -142,7 +142,7 @@ Best for one-off usage or testing.
   (:require [dscloj.core :as dscloj]))
 
 (defn answer-question [question]
-  (dscloj/predict qa-module 
+  (dscloj/predict :gpt4 qa-module 
                   {:question question}
                   {:model "gpt-4"
                    :api-key (System/getenv "OPENAI_API_KEY")
@@ -163,7 +163,7 @@ Best for one-off usage or testing.
    :config {:api-key (System/getenv "OPENAI_API_KEY")}})
 
 (defn answer-question [question]
-  (dscloj/predict qa-module 
+  (dscloj/predict :gpt4 qa-module 
                   {:question question}
                   :gpt4  ; provider-config
                   {:temperature 0.7  ; options
@@ -171,7 +171,7 @@ Best for one-off usage or testing.
 
 ;; Option 2: With ad-hoc provider
 (defn answer-question [question]
-  (dscloj/predict qa-module 
+  (dscloj/predict :gpt4 qa-module 
                   {:question question}
                   {:provider :openai 
                    :model "gpt-4" 
@@ -228,17 +228,17 @@ Best for one-off usage or testing.
 (dscloj/register-provider! :gemini {...})
 
 ;; Switch providers at runtime - just change the keyword
-(dscloj/predict module input :gpt4)
-(dscloj/predict module input :claude)
-(dscloj/predict module input :gemini)
+(dscloj/predict provider-config module input :gpt4)
+(dscloj/predict provider-config module input :claude)
+(dscloj/predict provider-config module input :gemini)
 ```
 
 ### 2. Multi-Provider Support
 
 ```clojure
 ;; Compare results from different providers
-(def openai-result (dscloj/predict module input :gpt4))
-(def anthropic-result (dscloj/predict module input :claude))
+(def openai-result (dscloj/predict provider-config module input :gpt4))
+(def anthropic-result (dscloj/predict provider-config module input :claude))
 
 (when (not= openai-result anthropic-result)
   (println "Different results!"))
@@ -282,7 +282,7 @@ Best for one-off usage or testing.
   )
 
 (defn process [input]
-  (dscloj/predict module input 
+  (dscloj/predict provider-config module input 
                   {:model "gpt-4" 
                    :api-key (System/getenv "OPENAI_API_KEY")}))
 ```
@@ -296,7 +296,7 @@ Best for one-off usage or testing.
      :config {:api-key (System/getenv "OPENAI_API_KEY")}}))
 
 (defn process [input]
-  (dscloj/predict module input :default))
+  (dscloj/predict provider-config module input :default))
 ```
 
 ### Pattern 2: Multiple Providers
@@ -304,10 +304,10 @@ Best for one-off usage or testing.
 **Before:**
 ```clojure
 (defn process-with-gpt4 [input]
-  (dscloj/predict module input {:model "gpt-4" :api-key openai-key}))
+  (dscloj/predict provider-config module input {:model "gpt-4" :api-key openai-key}))
 
 (defn process-with-claude [input]
-  (dscloj/predict module input {:model "claude-3-5-sonnet-20241022" :api-key anthropic-key}))
+  (dscloj/predict provider-config module input {:model "claude-3-5-sonnet-20241022" :api-key anthropic-key}))
 ```
 
 **After:**
@@ -319,7 +319,7 @@ Best for one-off usage or testing.
     {:provider :anthropic :model "claude-3-5-sonnet-20241022" :config {:api-key anthropic-key}}))
 
 (defn process [input provider-name]
-  (dscloj/predict module input provider-name))
+  (dscloj/predict provider-config module input provider-name))
 
 ;; Usage
 (process input :gpt4)
@@ -331,7 +331,7 @@ Best for one-off usage or testing.
 **Before:**
 ```clojure
 (deftest predict-test
-  (let [result (dscloj/predict module input 
+  (let [result (dscloj/predict provider-config module input 
                                 {:model "gpt-3.5-turbo" 
                                  :api-key test-key})]
     (is (= expected result))))
@@ -341,7 +341,7 @@ Best for one-off usage or testing.
 ```clojure
 (deftest predict-test
   ;; Use ad-hoc provider for tests
-  (let [result (dscloj/predict module input 
+  (let [result (dscloj/predict provider-config module input 
                                 {:provider :openai 
                                  :model "gpt-3.5-turbo" 
                                  :config {:api-key test-key}})]
@@ -357,10 +357,10 @@ Best for one-off usage or testing.
 **Fix:** Add provider-config as 3rd argument:
 ```clojure
 ;; Wrong
-(dscloj/predict module input {:model "gpt-4" :api-key "..."})
+(dscloj/predict provider-config module input {:model "gpt-4" :api-key "..."})
 
 ;; Right
-(dscloj/predict module input 
+(dscloj/predict provider-config module input 
                 {:provider :openai :model "gpt-4" :config {:api-key "..."}})
 ```
 
@@ -381,10 +381,10 @@ Best for one-off usage or testing.
 **Fix:** Move options to 4th argument:
 ```clojure
 ;; Wrong
-(dscloj/predict module input :gpt4 :temperature 0.7)
+(dscloj/predict provider-config module input :gpt4 :temperature 0.7)
 
 ;; Right
-(dscloj/predict module input :gpt4 {:temperature 0.7})
+(dscloj/predict provider-config module input :gpt4 {:temperature 0.7})
 ```
 
 ## Need Help?

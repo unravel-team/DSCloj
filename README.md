@@ -50,7 +50,7 @@ DSCloj works by defining **modules** - declarative specifications of LLM tasks w
 (dscloj/quick-setup!)  ; Registers :openai, :anthropic, :gemini, etc.
 
 ;; 3. Use the module with predict
-(def result (dscloj/predict qa-module 
+(def result (dscloj/predict :gpt4 qa-module 
                             {:question "What is the capital of France?"}
                             :gpt4))  ; provider-config
 
@@ -102,14 +102,14 @@ DSCloj uses litellm-clj's router API for flexible provider management:
    :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
 
 ;; Use registered providers
-(dscloj/predict qa-module {:question "..."} :gpt4)
-(dscloj/predict qa-module {:question "..."} :claude)
+(dscloj/predict :gpt4 qa-module {:question "..."} :gpt4)
+(dscloj/predict :gpt4 qa-module {:question "..."} :claude)
 
 ;; Option 2: Quick setup from environment
 (dscloj/quick-setup!)  ; Reads OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
 
 ;; Option 3: Ad-hoc provider (no registration)
-(dscloj/predict qa-module 
+(dscloj/predict :gpt4 qa-module 
                 {:question "..."}
                 {:provider :openai 
                  :model "gpt-4" 
@@ -154,12 +154,12 @@ DSCloj uses [Malli](https://github.com/metosin/malli) specs for defining field t
    :config {:api-key (System/getenv "OPENAI_API_KEY")}})
 
 ;; Invalid inputs/outputs are automatically validated
-(dscloj/predict qa-module 
+(dscloj/predict :gpt4 qa-module 
                {:question 123}  ; Throws validation error - should be string
                :gpt4)
 
 ;; Disable validation if needed
-(dscloj/predict qa-module 
+(dscloj/predict :gpt4 qa-module 
                {:question "..."}
                :gpt4
                {:validate? false})  ; Skip validation (4th argument for options)
@@ -235,9 +235,9 @@ One of the key benefits of the router API is easy provider switching:
    :config {:api-key (System/getenv "GOOGLE_API_KEY")}})
 
 ;; Same module, different providers - just change the provider name
-(def openai-result (dscloj/predict qa-module {:question "What is AI?"} :gpt4))
-(def anthropic-result (dscloj/predict qa-module {:question "What is AI?"} :claude))
-(def gemini-result (dscloj/predict qa-module {:question "What is AI?"} :gemini))
+(def openai-result (dscloj/predict :gpt4 qa-module {:question "What is AI?"} :gpt4))
+(def anthropic-result (dscloj/predict :gpt4 qa-module {:question "What is AI?"} :claude))
+(def gemini-result (dscloj/predict :gpt4 qa-module {:question "What is AI?"} :gemini))
 
 ;; Compare results
 (println "OpenAI:" (:answer openai-result))
