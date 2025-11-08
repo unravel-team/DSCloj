@@ -25,11 +25,14 @@
                                   :spec :string
                                   :description "The answer to the question"}]
                        :instructions "Answer the question accurately and concisely."}
+            ;; Use ad-hoc provider config (no registration needed)
+            provider-config {:provider :openai
+                            :model "gpt-3.5-turbo"
+                            :config {:api-key (System/getenv "OPENAI_API_KEY")}}
             result (dscloj/predict qa-module 
                                   {:question "What is 2+2? Reply with just the number."}
-                                  {:model "gpt-3.5-turbo"
-                                   :api-key (System/getenv "OPENAI_API_KEY")
-                                   :temperature 0})]
+                                  provider-config
+                                  {:temperature 0})]
         (is (map? result))
         (is (contains? result :answer))
         (is (string? (:answer result)))
@@ -45,11 +48,13 @@
                                          :spec :boolean
                                          :description "Whether the statement is true or false"}]
                               :instructions "Determine if the statement is true or false."}
+            provider-config {:provider :openai
+                            :model "gpt-3.5-turbo"
+                            :config {:api-key (System/getenv "OPENAI_API_KEY")}}
             result (dscloj/predict validator-module
                                   {:statement "The Earth orbits around the Sun."}
-                                  {:model "gpt-3.5-turbo"
-                                   :api-key (System/getenv "OPENAI_API_KEY")
-                                   :temperature 0})]
+                                  provider-config
+                                  {:temperature 0})]
         (is (map? result))
         (is (contains? result :is_true))
         (is (boolean? (:is_true result)))
@@ -71,11 +76,13 @@
                                         :spec :string
                                         :description "Brief summary"}]
                              :instructions "Analyze the text and provide word count, check for punctuation, and give a brief summary."}
+            provider-config {:provider :openai
+                            :model "gpt-3.5-turbo"
+                            :config {:api-key (System/getenv "OPENAI_API_KEY")}}
             result (dscloj/predict analyzer-module
                                   {:text "Hello, world! This is a test."}
-                                  {:model "gpt-3.5-turbo"
-                                   :api-key (System/getenv "OPENAI_API_KEY")
-                                   :temperature 0})]
+                                  provider-config
+                                  {:temperature 0})]
         (is (map? result))
         (is (contains? result :word_count))
         (is (contains? result :has_punctuation))
