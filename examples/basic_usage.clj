@@ -54,7 +54,7 @@
      :config {:api-key (System/getenv "OPENAI_API_KEY")}})
   
   ;; Using registered provider
-  (def result (dscloj/predict qa-module 
+  (def result (dscloj/predict :gpt4 qa-module 
                               {:question "What is the capital of France?"}
                               :gpt4))  ; provider-config as third argument
   
@@ -62,7 +62,7 @@
   ;; => "Paris"
   
   ;; Ad-hoc provider (no registration needed)
-  (def result2 (dscloj/predict qa-module 
+  (def result2 (dscloj/predict :gpt4 qa-module 
                                {:question "What is the capital of France?"}
                                {:provider :openai 
                                 :model "gpt-4" 
@@ -74,13 +74,13 @@
      :model "claude-3-5-sonnet-20241022" 
      :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
   
-  (def result3 (dscloj/predict qa-module 
+  (def result3 (dscloj/predict :gpt4 qa-module 
                                {:question "What is the capital of France?"}
                                :claude))
   
   ;; Invalid input will throw a validation exception
   (try
-    (dscloj/predict qa-module 
+    (dscloj/predict :gpt4 qa-module 
                    {:question 123}  ; Should be a string
                    :gpt4)
     (catch Exception e
@@ -112,7 +112,7 @@
   
   ;; Pass options as fourth argument
   (def translation-result 
-    (dscloj/predict translation-module
+    (dscloj/predict :gpt4 translation-module
                    {:text "Hello, how are you?"
                     :target_language "Spanish"}
                    :gpt4
@@ -150,7 +150,7 @@
      :config {:api-key (System/getenv "OPENAI_API_KEY")}})
   
   (def qa-result 
-    (dscloj/predict qa-with-confidence-module
+    (dscloj/predict :gpt4 qa-with-confidence-module
                    {:question "What is the speed of light?"}
                    :gpt4))
   
@@ -195,7 +195,7 @@
      :config {:api-key (System/getenv "OPENAI_API_KEY")}})
   
   (def analysis-result 
-    (dscloj/predict analysis-module
+    (dscloj/predict :gpt4 analysis-module
                    {:text "This is a sample text for analysis."
                     :min_length 10}
                    :gpt4))
@@ -226,13 +226,13 @@
      :config {:api-key (System/getenv "OPENAI_API_KEY")}})
   
   ;; With validation (default)
-  (dscloj/predict strict-module
+  (dscloj/predict :gpt4 strict-module
                  {:number 50}
                  :gpt4
                  {:validate? true})  ; This is the default
   
   ;; Without validation
-  (dscloj/predict strict-module
+  (dscloj/predict :gpt4 strict-module
                  {:number 50}
                  :gpt4
                  {:validate? false})  ; Skip Malli validation
@@ -272,7 +272,7 @@
   
   ;; This will throw a validation error with details
   (try
-    (dscloj/predict typed-module
+    (dscloj/predict :gpt4 typed-module
                    {:age "not-a-number"  ; Invalid: should be int
                     :name "John"}
                    :gpt4)
@@ -313,7 +313,7 @@
      :model "gpt-4" 
      :config {:api-key (System/getenv "OPENAI_API_KEY")}})
   
-  (dscloj/predict qa-with-context-module
+  (dscloj/predict :gpt4 qa-with-context-module
                  {:question "What is the capital?"
                   :context "We are discussing France."}
                  :gpt4)
@@ -342,15 +342,15 @@
      :config {:api-key (System/getenv "GOOGLE_API_KEY")}})
   
   ;; Same module, different providers - switch by just changing the config name
-  (def openai-result (dscloj/predict qa-module 
+  (def openai-result (dscloj/predict :gpt4 qa-module 
                                      {:question "What is AI?"}
                                      :gpt4))
   
-  (def anthropic-result (dscloj/predict qa-module 
+  (def anthropic-result (dscloj/predict :gpt4 qa-module 
                                         {:question "What is AI?"}
                                         :claude))
   
-  (def gemini-result (dscloj/predict qa-module 
+  (def gemini-result (dscloj/predict :gpt4 qa-module 
                                      {:question "What is AI?"}
                                      :gemini))
   
