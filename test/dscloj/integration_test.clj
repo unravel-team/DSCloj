@@ -6,14 +6,20 @@
   "Check if OPENAI_API_KEY is set in environment"
   (not (nil? (System/getenv "OPENAI_API_KEY"))))
 
-(defn skip-if-no-api-key
-  "Fixture to skip tests if API key is not available"
+(defn setup-test-provider
+  "Fixture to register test provider and skip tests if API key is not available"
   [f]
   (if api-key-available?
-    (f)
+    (do
+      ;; Register test provider
+      (dscloj/register-provider! :test-openai
+                                 {:provider :openai
+                                  :model "gpt-3.5-turbo"
+                                  :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+      (f))
     (println "Skipping integration tests: OPENAI_API_KEY not set")))
 
-(use-fixtures :once skip-if-no-api-key)
+(use-fixtures :once setup-test-provider)
 
 (deftest ^:integration basic-qa-integration-test
   (testing "Basic Q&A with OpenAI API"
@@ -25,14 +31,11 @@
                                   :spec :string
                                   :description "The answer to the question"}]
                        :instructions "Answer the question accurately and concisely."}
-            ;; Use ad-hoc provider config (no registration needed)
-            provider-config {:provider :openai
-                            :model "gpt-3.5-turbo"
-                            :config {:api-key (System/getenv "OPENAI_API_KEY")}}
-            result (dscloj/predict provider-config
+            ;; Use registered provider
+            result (dscloj/predict :test-openai
                                   qa-module 
                                   {:question "What is 2+2? Reply with just the number."}
-                                  {:temperature 0})]
+                                  {:temperature 0.0})]
         (is (map? result))
         (is (contains? result :answer))
         (is (string? (:answer result)))
@@ -48,13 +51,10 @@
                                          :spec :boolean
                                          :description "Whether the statement is true or false"}]
                               :instructions "Determine if the statement is true or false."}
-            provider-config {:provider :openai
-                            :model "gpt-3.5-turbo"
-                            :config {:api-key (System/getenv "OPENAI_API_KEY")}}
-            result (dscloj/predict provider-config
+            result (dscloj/predict :test-openai
                                   validator-module
                                   {:statement "The Earth orbits around the Sun."}
-                                  {:temperature 0})]
+                                  {:temperature 0.0})]
         (is (map? result))
         (is (contains? result :is_true))
         (is (boolean? (:is_true result)))
@@ -76,13 +76,10 @@
                                         :spec :string
                                         :description "Brief summary"}]
                              :instructions "Analyze the text and provide word count, check for punctuation, and give a brief summary."}
-            provider-config {:provider :openai
-                            :model "gpt-3.5-turbo"
-                            :config {:api-key (System/getenv "OPENAI_API_KEY")}}
-            result (dscloj/predict provider-config
+            result (dscloj/predict :test-openai
                                   analyzer-module
                                   {:text "Hello, world! This is a test."}
-                                  {:temperature 0})]
+                                  {:temperature 0.0})]
         (is (map? result))
         (is (contains? result :word_count))
         (is (contains? result :has_punctuation))
