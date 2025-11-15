@@ -75,14 +75,20 @@
     (println "ERROR: OPENAI_API_KEY environment variable not set!")
     (System/exit 1))
   
+  ;; Register provider
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
   ;; Start streaming
   (let [stream-ch (dscloj/predict-stream
+                   :gpt4  ; provider-config
                    whales-module
                    {:query "Generate me details of 5 species of Whale."}
-                   {:model "gpt-4"
-                    :api-key (System/getenv "OPENAI_API_KEY")
-                    :debounce-ms 100
-                    :validate? false})]
+
+                   {:debounce-ms 100
+                    :validate? false})]  ; options
     
     ;; Consume the stream and display progressively
     (go-loop [last-markdown nil]
@@ -123,6 +129,12 @@
     (println)
     (println (clojure.string/join (repeat 80 "="))))
   
+  ;; Register provider for REPL usage
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
   ;; Run the example
   (-main)
   
@@ -130,9 +142,43 @@
   (let [stream-ch (dscloj/predict-stream
                    whales-module
                    {:query "Generate me details of 5 species of Whale."}
-                   {:model "gpt-4"
-                    :api-key (System/getenv "OPENAI_API_KEY")
-                    :debounce-ms 200
+                   :gpt4
+                   {:debounce-ms 200
+                    :validate? false})]
+    (go-loop []
+      (when-let [parsed (<! stream-ch)]
+        (println "\n--- Received Update ---")
+        (when-let [md (:markdown_output parsed)]
+          (print-md md))
+        (recur))))
+  
+  ;; Ad-hoc provider usage (no registration)
+  (let [stream-ch (dscloj/predict-stream
+                   whales-module
+                   {:query "Generate me details of 3 species of Whale."}
+                   {:provider :openai 
+                    :model "gpt-4" 
+                    :config {:api-key (System/getenv "OPENAI_API_KEY")}}
+                   {:debounce-ms 200
+                    :validate? false})]
+    (go-loop []
+      (when-let [parsed (<! stream-ch)]
+        (println "\n--- Received Update ---")
+        (when-let [md (:markdown_output parsed)]
+          (print-md md))
+        (recur))))
+  
+  ;; Use different provider (Anthropic Claude)
+  (dscloj/register-provider! :claude 
+    {:provider :anthropic 
+     :model "claude-3-5-sonnet-20241022" 
+     :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
+  
+  (let [stream-ch (dscloj/predict-stream
+                   whales-module
+                   {:query "Generate me details of 5 species of Whale."}
+                   :claude
+                   {:debounce-ms 200
                     :validate? false})]
     (go-loop []
       (when-let [parsed (<! stream-ch)]

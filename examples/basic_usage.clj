@@ -3,7 +3,38 @@
             [malli.core :as m]))
 
 ;; =============================================================================
-;; EXAMPLE 1: Simple Q&A Module
+;; SETUP: Register Provider Configurations
+;; =============================================================================
+
+(comment
+  ;; Option 1: Quick setup from environment variables
+  ;; This will automatically register :openai, :anthropic, :gemini, etc.
+  ;; based on available API keys in environment
+  (dscloj/quick-setup!)
+  
+  ;; Option 2: Register custom providers
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
+  (dscloj/register-provider! :gpt4-mini 
+    {:provider :openai 
+     :model "gpt-4o-mini" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
+  (dscloj/register-provider! :claude 
+    {:provider :anthropic 
+     :model "claude-3-5-sonnet-20241022" 
+     :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
+  
+  ;; List all registered providers
+  (dscloj/list-providers)
+  )
+
+
+;; =============================================================================
+;; EXAMPLE 1: Simple Q&A Module with Router API
 ;; =============================================================================
 
 (def qa-module
@@ -16,27 +47,36 @@
    :instructions "Provide concise and accurate answers."})
 
 (comment
-  ;; Call predict - it handles everything automatically:
-  ;; - Generates prompt from module
-  ;; - Validates inputs against Malli specs
-  ;; - Injects input values
-  ;; - Calls LLM
-  ;; - Parses output
-  ;; - Validates outputs against Malli specs
-  (def result (dscloj/predict qa-module 
-                              {:question "What is the capital of France?"}
-                              {:model "gpt-4"
-                               :api-key (System/getenv "OPENAI_API_KEY")}))
+  ;; Setup provider first
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
+  ;; Using registered provider
+  (def result (dscloj/predict :gpt4 qa-module 
+                              {:question "What is the capital of France?"}))  ; provider-config as third argument
   
   (:answer result)
   ;; => "Paris"
   
+  (def result2 (dscloj/predict :gpt4 
+                               qa-module 
+                               {:question "What is the capital of France?"}))
+  
+  ;; Using different provider (Anthropic)
+  (dscloj/register-provider! :claude 
+    {:provider :anthropic 
+     :model "claude-haiku-4-5" 
+     :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
+  
+  (def result3 (dscloj/predict :claude qa-module 
+                               {:question "What is the capital of France?"}))
+  
   ;; Invalid input will throw a validation exception
   (try
-    (dscloj/predict qa-module 
-                   {:question 123}  ; Should be a string
-                   {:model "gpt-4"
-                    :api-key (System/getenv "OPENAI_API_KEY")})
+    (dscloj/predict :gpt4 qa-module 
+                   {:question 123})
     (catch Exception e
       (println "Validation error:" (.getMessage e))))
   )
@@ -59,14 +99,18 @@
    :instructions "Translate text accurately."})
 
 (comment
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
+  ;; Pass options as fourth argument
   (def translation-result 
-    (dscloj/predict translation-module
+    (dscloj/predict :gpt4 translation-module
                    {:text "Hello, how are you?"
                     :target_language "Spanish"}
-                   {:model "gpt-4"
-                    :temperature 0.3
-                    :max-tokens 100
-                    :api-key (System/getenv "OPENAI_API_KEY")}))
+                   {:temperature 0.3
+                    :max-tokens 100}))  ; options in fourth argument
   
   (:translation translation-result)
   ;; => "Hola, ¿cómo estás?"
@@ -93,11 +137,14 @@
    :instructions "Answer with confidence assessment."})
 
 (comment
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
   (def qa-result 
-    (dscloj/predict qa-with-confidence-module
-                   {:question "What is the speed of light?"}
-                   {:model "gpt-4"
-                    :api-key (System/getenv "OPENAI_API_KEY")}))
+    (dscloj/predict :gpt4 qa-with-confidence-module
+                   {:question "What is the speed of light?"}))
   
   ;; Types are automatically converted and validated
   (:is_confident qa-result)     ;; => true (boolean)
@@ -134,12 +181,15 @@
    :instructions "Analyze the text and check if it meets the minimum length requirement."})
 
 (comment
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
   (def analysis-result 
-    (dscloj/predict analysis-module
+    (dscloj/predict :gpt4 analysis-module
                    {:text "This is a sample text for analysis."
-                    :min_length 10}
-                   {:model "gpt-4"
-                    :api-key (System/getenv "OPENAI_API_KEY")}))
+                    :min_length 10}))
   
   ;; All outputs are type-validated against Malli specs
   (:summary analysis-result)      ;; => string
@@ -161,19 +211,20 @@
    :instructions "Process the number."})
 
 (comment
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
   ;; With validation (default)
-  (dscloj/predict strict-module
+  (dscloj/predict :gpt4 strict-module
                  {:number 50}
-                 {:model "gpt-4"
-                  :validate? true  ; This is the default
-                  :api-key (System/getenv "OPENAI_API_KEY")})
+                 {:validate? true})  ; This is the default
   
   ;; Without validation
-  (dscloj/predict strict-module
+  (dscloj/predict :gpt4 strict-module
                  {:number 50}
-                 {:model "gpt-4"
-                  :validate? false  ; Skip Malli validation
-                  :api-key (System/getenv "OPENAI_API_KEY")})
+                 {:validate? false})  ; Skip Malli validation
   )
 
 
@@ -203,13 +254,16 @@
               :spec :string}]})
 
 (comment
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
   ;; This will throw a validation error with details
   (try
-    (dscloj/predict typed-module
+    (dscloj/predict :gpt4 typed-module
                    {:age "not-a-number"  ; Invalid: should be int
-                    :name "John"}
-                   {:model "gpt-4"
-                    :api-key (System/getenv "OPENAI_API_KEY")})
+                    :name "John"})
     (catch clojure.lang.ExceptionInfo e
       (let [data (ex-data e)]
         (println "Error:" (.getMessage e))
@@ -242,10 +296,50 @@
    :instructions "Answer based on the question and context."})
 
 (comment
-  (dscloj/predict qa-with-context-module
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
+  (dscloj/predict :gpt4 qa-with-context-module
                  {:question "What is the capital?"
-                  :context "We are discussing France."}
-                 {:model "gpt-4"
-                  :api-key (System/getenv "OPENAI_API_KEY")})
+                  :context "We are discussing France."})
   )
 
+
+;; =============================================================================
+;; EXAMPLE 9: Switching Between Providers
+;; =============================================================================
+
+(comment
+  ;; Register multiple providers
+  (dscloj/register-provider! :gpt4 
+    {:provider :openai 
+     :model "gpt-4" 
+     :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+  
+  (dscloj/register-provider! :claude 
+    {:provider :anthropic 
+     :model "claude-3-5-sonnet-20241022" 
+     :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
+  
+  (dscloj/register-provider! :gemini 
+    {:provider :gemini 
+     :model "gemini-pro" 
+     :config {:api-key (System/getenv "GOOGLE_API_KEY")}})
+  
+  ;; Same module, different providers - switch by just changing the config name
+  (def openai-result (dscloj/predict :gpt4 qa-module 
+                                     {:question "What is AI?"}))
+  
+  (def anthropic-result (dscloj/predict :gpt4 qa-module 
+                                        {:question "What is AI?"}))
+  
+  (def gemini-result (dscloj/predict :gpt4 qa-module 
+                                     {:question "What is AI?"}))
+  
+  ;; Compare results
+  (println "OpenAI:" (:answer openai-result))
+  (println "Anthropic:" (:answer anthropic-result))
+  (println "Gemini:" (:answer gemini-result))
+  )

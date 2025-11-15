@@ -1,9 +1,45 @@
 (ns dscloj.core
-  (:require [litellm.core :as litellm]
+  (:require [litellm.router :as router]
             [clojure.string :as str]
             [malli.core :as m]
             [clojure.core.async :as async :refer [go-loop <! >! chan close!]]
             [litellm.streaming :as streaming]))
+
+;; =============================================================================
+;; Provider Management (Router API)
+;; =============================================================================
+
+(defn register-provider!
+  "Register a named provider configuration for use with predict/predict-stream.
+  
+  Parameters:
+  - config-name: Keyword identifier for this configuration (e.g., :gpt4, :claude)
+  - provider-spec: Map with :provider, :model, and :config keys
+  
+  Example:
+    (register-provider! :gpt4 
+      {:provider :openai 
+       :model \"gpt-4\" 
+       :config {:api-key (System/getenv \"OPENAI_API_KEY\")}})"
+  [config-name provider-spec]
+  (router/register! config-name provider-spec))
+
+(defn quick-setup!
+  "Quick setup of common providers from environment variables.
+  Sets up :openai, :anthropic, :gemini, etc. based on available API keys.
+  
+  Example:
+    (quick-setup!)  ; Reads OPENAI_API_KEY, ANTHROPIC_API_KEY, etc."
+  []
+  (router/quick-setup!))
+
+
+(defn list-providers
+  "List all registered provider configurations.
+  
+  Returns a map of config-name -> provider-spec."
+  []
+  (router/list-providers))
 
 ;; =============================================================================
 ;; Malli Schema Support
@@ -174,23 +210,33 @@
               [name converted-value])))))
 
 (defn predict
-  "Make a prediction using an LLM.
+  "Make a prediction using an LLM via the router API.
   
   Parameters:
+  - provider-config: Either a keyword referencing a registered provider config, or a map with:
+                     {:provider :openai :model \"gpt-4\" :config {:api-key \"...\"}}
   - module: The module definition with :inputs/:outputs fields containing :spec for Malli schemas
   - input-map: Map of input field names to values
-  - options: Optional configuration map (e.g., :model, :temperature, :validate?)
+  - options: Optional configuration map (e.g., :temperature, :validate?)
   
   Options:
-  - :model - LLM model to use
   - :temperature - Temperature for sampling
   - :validate? - Whether to validate inputs/outputs with Malli specs (default: true)
+  - Any other LLM-specific options
   
   Returns parsed output as a map based on module's output fields.
   
-  Example:
-    (predict qa-module {:question \"What is 2+2?\"} {:model \"gpt-4\"})"
-  [module input-map & [options]]
+  Examples:
+    ;; Using registered provider
+    (register-provider! :gpt4 {:provider :openai :model \"gpt-4\" :config {:api-key \"sk-...\"}})
+    (predict :gpt4 qa-module {:question \"What is 2+2?\"})
+    
+    ;; Ad-hoc provider (no registration)
+    (predict {:provider :anthropic :model \"claude-3-5-sonnet-20241022\" 
+              :config {:api-key \"sk-...\"}}
+             qa-module 
+             {:question \"What is 2+2?\"})"
+  [provider-config module input-map & [options]]
   (let [;; Validate inputs if requested
         should-validate? (get options :validate? true)
         validated-input (if should-validate?
@@ -209,11 +255,10 @@
         ;; Combine into full prompt
         full-prompt (str base-prompt "\n\n" input-section)
         
-        ;; Call LLM
-        response (litellm/completion :openai
-                                     (or (:model options) "gpt-3.5-turbo")
-                                     {:messages [{:role :user :content full-prompt}]}
-                                     (dissoc options :model))
+        ;; Call LLM via router API
+        response (router/completion provider-config
+                                   (merge {:messages [{:role :user :content full-prompt}]}
+                                          (dissoc options :validate?)))
         
         ;; Parse and return structured output
         parsed (parse-output (-> response
@@ -268,15 +313,16 @@
   (parse-output accumulated-text module))
 
 (defn predict-stream
-  "Stream predictions from an LLM with progressive structured output parsing.
+  "Stream predictions from an LLM with progressive structured output parsing via router API.
   
   Parameters:
+  - provider-config: Either a keyword referencing a registered provider config, or a map with:
+                     {:provider :openai :model \"gpt-4\" :config {:api-key \"...\"}}
   - module: The module definition with :inputs/:outputs fields
   - input-map: Map of input field names to values
-  - options: Configuration map with :model, :on-chunk callback, :debounce-ms, etc.
+  - options: Configuration map with :on-chunk callback, :debounce-ms, etc.
   
   Options:
-  - :model - LLM model to use
   - :temperature - Temperature for sampling
   - :validate? - Whether to validate inputs/outputs with Malli specs (default: false for streaming)
   - :debounce-ms - Milliseconds to debounce emissions (default: 10)
@@ -284,13 +330,15 @@
   
   Returns: core.async channel that emits progressively parsed output maps.
   
-  Example:
-    (let [ch (predict-stream whales-module {:query \"Tell me about whales\"} {:model \"gpt-4\"})]
+  Examples:
+    ;; Using registered provider
+    (register-provider! :gpt4 {:provider :openai :model \"gpt-4\" :config {:api-key \"sk-...\"}})
+    (let [ch (predict-stream :gpt4 whales-module {:query \"Tell me about whales\"})]
       (go-loop []
         (when-let [output (<! ch)]
           (println output)
           (recur))))"
-  [module input-map & [options]]
+  [provider-config module input-map & [options]]
   (let [should-validate? (get options :validate? false)
         validated-input (if should-validate?
                          (validate-inputs (:inputs module) input-map)
@@ -311,14 +359,11 @@
         ;; Create output channel
         output-ch (chan)
         
-        ;; Call LLM with streaming enabled
-        stream-ch (litellm/completion :openai
-                                      (or (:model options) "gpt-3.5-turbo")
-                                      {:messages [{:role :user :content full-prompt}]
-                                       :stream true}
-                                      (-> options
-                                          (dissoc :model :on-chunk :debounce-ms :validate?)
-                                          (assoc :stream true)))
+        ;; Call LLM with streaming enabled via router API
+        stream-ch (router/completion provider-config
+                                    (merge {:messages [{:role :user :content full-prompt}]
+                                            :stream true}
+                                           (dissoc options :on-chunk :debounce-ms :validate?)))
         
         debounce-ms (get options :debounce-ms 10)
         on-chunk-fn (get options :on-chunk)
