@@ -165,14 +165,6 @@ DSCloj uses [Malli](https://github.com/metosin/malli) specs for defining field t
                {:validate? false})  ; Skip validation (4th argument for options)
 ```
 
-**Benefits of Malli Specs:**
-- Type safety with automatic validation
-- Constraints (min/max, regex, custom validators)
-- Reusable spec definitions
-- Detailed error messages for debugging
-- Better IDE support and autocomplete
-- Flexible (can disable validation when needed)
-
 ### Streaming Support
 
 DSCloj supports **streaming structured output** with progressive parsing and validation:
@@ -222,27 +214,22 @@ One of the key benefits of the router API is easy provider switching:
 
 ```clojure
 ;; Register multiple providers
-(dscloj/register-provider! :gpt4 
+(dscloj/register-provider! :simple-llm 
   {:provider :openai :model "gpt-4" 
    :config {:api-key (System/getenv "OPENAI_API_KEY")}})
 
-(dscloj/register-provider! :claude 
-  {:provider :anthropic :model "claude-3-5-sonnet-20241022" 
+(def openai-result (dscloj/predict :simple-llm qa-module {:question "What is AI?"}))
+
+(dscloj/register-provider! :simple-llm
+  {:provider :anthropic :model "claude-haiku-4-5" 
    :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
 
-(dscloj/register-provider! :gemini 
-  {:provider :gemini :model "gemini-pro" 
-   :config {:api-key (System/getenv "GOOGLE_API_KEY")}})
-
-;; Same module, different providers - just change the provider name
-(def openai-result (dscloj/predict :gpt4 qa-module {:question "What is AI?"} :gpt4))
-(def anthropic-result (dscloj/predict :gpt4 qa-module {:question "What is AI?"} :claude))
-(def gemini-result (dscloj/predict :gpt4 qa-module {:question "What is AI?"} :gemini))
+(def anthropic-result (dscloj/predict :simple-llm qa-module {:question "What is AI?"}))
 
 ;; Compare results
 (println "OpenAI:" (:answer openai-result))
 (println "Anthropic:" (:answer anthropic-result))
-(println "Gemini:" (:answer gemini-result))
+
 ```
 
 ### More Examples
