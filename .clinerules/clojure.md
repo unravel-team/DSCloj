@@ -1,0 +1,1 @@
+Use clojure-mcp whenever you want to evalute code. It's already running a REPL there
