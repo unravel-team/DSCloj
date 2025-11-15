@@ -83,9 +83,10 @@
   
   ;; Start streaming
   (let [stream-ch (dscloj/predict-stream
+                   :gpt4  ; provider-config
                    whales-module
                    {:query "Generate me details of 5 species of Whale."}
-                   :gpt4  ; provider-config
+
                    {:debounce-ms 100
                     :validate? false})]  ; options
     

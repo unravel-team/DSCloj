@@ -55,34 +55,28 @@
   
   ;; Using registered provider
   (def result (dscloj/predict :gpt4 qa-module 
-                              {:question "What is the capital of France?"}
-                              :gpt4))  ; provider-config as third argument
+                              {:question "What is the capital of France?"}))  ; provider-config as third argument
   
   (:answer result)
   ;; => "Paris"
   
-  ;; Ad-hoc provider (no registration needed)
-  (def result2 (dscloj/predict :gpt4 qa-module 
-                               {:question "What is the capital of France?"}
-                               {:provider :openai 
-                                :model "gpt-4" 
-                                :config {:api-key (System/getenv "OPENAI_API_KEY")}}))
+  (def result2 (dscloj/predict :gpt4 
+                               qa-module 
+                               {:question "What is the capital of France?"}))
   
   ;; Using different provider (Anthropic)
   (dscloj/register-provider! :claude 
     {:provider :anthropic 
-     :model "claude-3-5-sonnet-20241022" 
+     :model "claude-haiku-4-5" 
      :config {:api-key (System/getenv "ANTHROPIC_API_KEY")}})
   
-  (def result3 (dscloj/predict :gpt4 qa-module 
-                               {:question "What is the capital of France?"}
-                               :claude))
+  (def result3 (dscloj/predict :claude qa-module 
+                               {:question "What is the capital of France?"}))
   
   ;; Invalid input will throw a validation exception
   (try
     (dscloj/predict :gpt4 qa-module 
-                   {:question 123}  ; Should be a string
-                   :gpt4)
+                   {:question 123})
     (catch Exception e
       (println "Validation error:" (.getMessage e))))
   )
@@ -115,7 +109,6 @@
     (dscloj/predict :gpt4 translation-module
                    {:text "Hello, how are you?"
                     :target_language "Spanish"}
-                   :gpt4
                    {:temperature 0.3
                     :max-tokens 100}))  ; options in fourth argument
   
@@ -151,8 +144,7 @@
   
   (def qa-result 
     (dscloj/predict :gpt4 qa-with-confidence-module
-                   {:question "What is the speed of light?"}
-                   :gpt4))
+                   {:question "What is the speed of light?"}))
   
   ;; Types are automatically converted and validated
   (:is_confident qa-result)     ;; => true (boolean)
@@ -197,8 +189,7 @@
   (def analysis-result 
     (dscloj/predict :gpt4 analysis-module
                    {:text "This is a sample text for analysis."
-                    :min_length 10}
-                   :gpt4))
+                    :min_length 10}))
   
   ;; All outputs are type-validated against Malli specs
   (:summary analysis-result)      ;; => string
@@ -228,13 +219,11 @@
   ;; With validation (default)
   (dscloj/predict :gpt4 strict-module
                  {:number 50}
-                 :gpt4
                  {:validate? true})  ; This is the default
   
   ;; Without validation
   (dscloj/predict :gpt4 strict-module
                  {:number 50}
-                 :gpt4
                  {:validate? false})  ; Skip Malli validation
   )
 
@@ -274,8 +263,7 @@
   (try
     (dscloj/predict :gpt4 typed-module
                    {:age "not-a-number"  ; Invalid: should be int
-                    :name "John"}
-                   :gpt4)
+                    :name "John"})
     (catch clojure.lang.ExceptionInfo e
       (let [data (ex-data e)]
         (println "Error:" (.getMessage e))
@@ -315,8 +303,7 @@
   
   (dscloj/predict :gpt4 qa-with-context-module
                  {:question "What is the capital?"
-                  :context "We are discussing France."}
-                 :gpt4)
+                  :context "We are discussing France."})
   )
 
 
@@ -343,16 +330,13 @@
   
   ;; Same module, different providers - switch by just changing the config name
   (def openai-result (dscloj/predict :gpt4 qa-module 
-                                     {:question "What is AI?"}
-                                     :gpt4))
+                                     {:question "What is AI?"}))
   
   (def anthropic-result (dscloj/predict :gpt4 qa-module 
-                                        {:question "What is AI?"}
-                                        :claude))
+                                        {:question "What is AI?"}))
   
   (def gemini-result (dscloj/predict :gpt4 qa-module 
-                                     {:question "What is AI?"}
-                                     :gemini))
+                                     {:question "What is AI?"}))
   
   ;; Compare results
   (println "OpenAI:" (:answer openai-result))
