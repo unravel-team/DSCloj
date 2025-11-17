@@ -1,0 +1,12 @@
+#kaocha/v1
+{:tests [{:id :unit
+          :test-paths ["test"]
+          :ns-patterns [".*-test$"]
+          :skip-meta [:integration]}
+         {:id :integration
+          :test-paths ["test"]
+          :ns-patterns [".*-test$"]
+          :focus-meta [:integration]}]
+ :plugins [:kaocha.plugin/profiling]
+ :color? true
+ :fail-fast? false}

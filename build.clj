@@ -3,7 +3,7 @@
             [clojure.edn :as edn]))
 
 (def lib 'tech.unravel/dscloj)
-(def version "0.1.0-alpha.1")
+(def version "0.1.0-alpha.2")
 (def class-dir "target/classes")
 (def basis (b/create-basis {:project "deps.edn"}))
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
