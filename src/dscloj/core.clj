@@ -1,6 +1,7 @@
 (ns dscloj.core
   (:require [litellm.router :as router]
             [clojure.string :as str]
+            [clojure.data.json :as json]
             [malli.core :as m]
             [clojure.core.async :as async :refer [go-loop <! >! chan close!]]
             [litellm.streaming :as streaming]))
@@ -45,21 +46,56 @@
 ;; Malli Schema Support
 ;; =============================================================================
 
+(defn complex-spec?
+  "Check if a Malli spec requires JSON serialization.
+  Returns true for :map, :vector, :sequential, :set, :tuple, :enum, etc."
+  [spec]
+  (and (vector? spec)
+       (#{:map :vector :sequential :set :tuple :enum :or :and :maybe} (first spec))))
+
 (defn spec->type-str
-  "Convert Malli spec to string type representation."
+  "Convert Malli spec to string type representation.
+  For complex types (maps, vectors, enums), returns a JSON-descriptive string."
   [spec]
   (cond
+    ;; Primitives
     (= spec :string) "str"
     (= spec :int) "int"
     (= spec :double) "float"
     (= spec :float) "float"
     (= spec :boolean) "bool"
+    (= spec :any) "any"
     (= spec 'string?) "str"
     (= spec 'int?) "int"
     (= spec 'double?) "float"
     (= spec 'float?) "float"
     (= spec 'boolean?) "bool"
+
+    ;; Map - describe fields as JSON object
+    (and (vector? spec) (= :map (first spec)))
+    (let [fields (filter vector? (rest spec))
+          field-strs (for [[k & rest] fields
+                           :let [opts (when (map? (first rest)) (first rest))
+                                 field-spec (if opts (second rest) (first rest))
+                                 optional? (:optional opts)]]
+                       (str (name k) (when optional? "?") ": " (spec->type-str field-spec)))]
+      (str "json {" (str/join ", " field-strs) "}"))
+
+    ;; Vector/sequential - describe as JSON array
+    (and (vector? spec) (#{:vector :sequential} (first spec)))
+    (str "json array of " (spec->type-str (second spec)))
+
+    ;; Enum - list options
+    (and (vector? spec) (= :enum (first spec)))
+    (str "one of: " (str/join ", " (map pr-str (rest spec))))
+
+    ;; Maybe - nullable
+    (and (vector? spec) (= :maybe (first spec)))
+    (str (spec->type-str (second spec)) " or null")
+
+    ;; Wrapped specs like [:string {:min 1}] - recurse on first element
     (vector? spec) (spec->type-str (first spec))
+
     :else "str"))
 
 (defn validate-field
@@ -112,6 +148,19 @@
           (validate-field field value)))))
   output-map)
 
+(defn- parse-json-value
+  "Parse a string as JSON if it looks like JSON (starts with { or [).
+  Returns the parsed Clojure data structure, or the original value if parsing fails."
+  [value]
+  (when value
+    (let [trimmed (str/trim value)]
+      (if (or (str/starts-with? trimmed "{")
+              (str/starts-with? trimmed "["))
+        (try
+          (json/read-str trimmed :key-fn keyword)
+          (catch Exception _ value))
+        value))))
+
 ;; =============================================================================
 ;; Core Functions
 ;; =============================================================================
@@ -156,8 +205,14 @@
                                         (let [type-str (spec->type-str spec)]
                                           (str "[[ ## " (clojure.core/name name) " ## ]]\n"
                                                "{" (clojure.core/name name) "}"
-                                               (when (= type-str "bool")
-                                                 "        # note: the value you produce must be True or False"))))))))
+                                               (cond
+                                                 (= type-str "bool")
+                                                 "        # note: the value you produce must be True or False"
+
+                                                 (complex-spec? spec)
+                                                 "        # note: respond with valid JSON"
+
+                                                 :else ""))))))))
         
         ;; Instructions section
         instructions-section (when instructions
@@ -170,13 +225,14 @@
 
 (defn parse-output
   "Parse LLM output based on module's output field definitions.
-  
+
   Parameters:
   - response: The LLM response string
   - module: The module definition with :outputs
-  
+
   Returns a map with field names as keys and parsed values.
-  
+  For complex specs (maps, vectors, enums), parses JSON responses.
+
   Example:
     (parse-output llm-response {:outputs [{:name :answer :spec :string}
                                           {:name :confidence :spec :boolean}]})"
@@ -187,26 +243,40 @@
                               match (re-find pattern text)]
                           (when match
                             (str/trim (second match)))))
-        
-        ;; Convert string value to appropriate type
-        convert-type (fn [value type-str]
-                       (cond
-                         (nil? value) nil
-                         (= type-str "bool") (or (= value "True") 
-                                                  (= value "true")
-                                                  (= value "TRUE"))
-                         (= type-str "int") (try (Long/parseLong value)
-                                                 (catch Exception _ value))
-                         (= type-str "float") (try (Double/parseDouble value)
-                                                   (catch Exception _ value))
-                         :else value))]
 
+        ;; Get base type from spec (unwrap [:string {:min 1}] -> :string)
+        base-type (fn [spec]
+                    (if (and (vector? spec) (not (complex-spec? spec)))
+                      (first spec)
+                      spec))
 
+        ;; Convert string value to appropriate type based on spec
+        convert-value (fn [value spec]
+                        (let [base (base-type spec)]
+                          (cond
+                            (nil? value) nil
+
+                            ;; Complex specs - parse as JSON
+                            (complex-spec? spec)
+                            (parse-json-value value)
+
+                            ;; Booleans
+                            (#{:boolean 'boolean?} base)
+                            (contains? #{"True" "true" "TRUE"} value)
+
+                            ;; Integers
+                            (#{:int 'int?} base)
+                            (try (Long/parseLong value) (catch Exception _ value))
+
+                            ;; Floats
+                            (#{:double :float 'double? 'float?} base)
+                            (try (Double/parseDouble value) (catch Exception _ value))
+
+                            :else value)))]
     (into {}
           (for [{:keys [name spec]} outputs]
-            (let [type-str (spec->type-str spec)
-                  raw-value (extract-field name response)
-                  converted-value (convert-type raw-value type-str)]
+            (let [raw-value (extract-field name response)
+                  converted-value (convert-value raw-value spec)]
               [name converted-value])))))
 
 (defn predict

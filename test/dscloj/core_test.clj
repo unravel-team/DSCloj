@@ -207,3 +207,113 @@
       (is (re-find #"int" prompt))
       (is (re-find #"bool" prompt))
       (is (re-find #"float" prompt)))))
+
+;; =============================================================================
+;; Complex Schema Tests
+;; =============================================================================
+
+(deftest complex-spec-test
+  (testing "complex-spec? detects complex types"
+    (is (dscloj/complex-spec? [:map [:x :string]]))
+    (is (dscloj/complex-spec? [:vector :int]))
+    (is (dscloj/complex-spec? [:enum "a" "b" "c"]))
+    (is (dscloj/complex-spec? [:sequential :string]))
+    (is (dscloj/complex-spec? [:maybe :string]))
+    (is (not (dscloj/complex-spec? :string)))
+    (is (not (dscloj/complex-spec? :int)))
+    (is (not (dscloj/complex-spec? [:string {:min 1}]))))
+
+  (testing "spec->type-str handles map schemas"
+    (is (= "json {one: str, two: str}"
+           (dscloj/spec->type-str [:map [:one :string] [:two :string]])))
+    (is (= "json {name: str, age: int}"
+           (dscloj/spec->type-str [:map [:name :string] [:age :int]]))))
+
+  (testing "spec->type-str handles nested maps"
+    (is (= "json {user: json {name: str}}"
+           (dscloj/spec->type-str [:map [:user [:map [:name :string]]]]))))
+
+  (testing "spec->type-str handles optional fields"
+    (is (= "json {name: str, email?: str}"
+           (dscloj/spec->type-str [:map [:name :string] [:email {:optional true} :string]]))))
+
+  (testing "spec->type-str handles vector schemas"
+    (is (= "json array of str"
+           (dscloj/spec->type-str [:vector :string])))
+    (is (= "json array of int"
+           (dscloj/spec->type-str [:vector :int]))))
+
+  (testing "spec->type-str handles enum schemas"
+    (is (= "one of: \"a\", \"b\", \"c\""
+           (dscloj/spec->type-str [:enum "a" "b" "c"]))))
+
+  (testing "spec->type-str handles maybe schemas"
+    (is (= "str or null"
+           (dscloj/spec->type-str [:maybe :string])))))
+
+(deftest parse-json-output-test
+  (testing "Parse JSON object output"
+    (let [module {:outputs [{:name :data
+                             :spec [:map [:name :string] [:age :int]]}]}
+          response "[[ ## data ## ]]\n{\"name\": \"John\", \"age\": 30}"
+          result (dscloj/parse-output response module)]
+      (is (= {:name "John" :age 30} (:data result)))))
+
+  (testing "Parse JSON array output"
+    (let [module {:outputs [{:name :items :spec [:vector :string]}]}
+          response "[[ ## items ## ]]\n[\"a\", \"b\", \"c\"]"
+          result (dscloj/parse-output response module)]
+      (is (= ["a" "b" "c"] (:items result)))))
+
+  (testing "Parse nested JSON output"
+    (let [module {:outputs [{:name :user
+                             :spec [:map [:profile [:map [:name :string]]]]}]}
+          response "[[ ## user ## ]]\n{\"profile\": {\"name\": \"Alice\"}}"
+          result (dscloj/parse-output response module)]
+      (is (= {:profile {:name "Alice"}} (:user result)))))
+
+  (testing "Parse enum as plain string"
+    (let [module {:outputs [{:name :choice :spec [:enum "a" "b" "c"]}]}
+          response "[[ ## choice ## ]]\nb"
+          result (dscloj/parse-output response module)]
+      (is (= "b" (:choice result)))))
+
+  (testing "Invalid JSON falls back to string"
+    (let [module {:outputs [{:name :data :spec [:map [:x :string]]}]}
+          response "[[ ## data ## ]]\nnot valid json"
+          result (dscloj/parse-output response module)]
+      (is (= "not valid json" (:data result)))))
+
+  (testing "Mixed complex and simple outputs"
+    (let [module {:outputs [{:name :items :spec [:vector :string]}
+                           {:name :count :spec :int}
+                           {:name :valid :spec :boolean}]}
+          response (str "[[ ## items ## ]]\n[\"x\", \"y\"]\n"
+                       "[[ ## count ## ]]\n2\n"
+                       "[[ ## valid ## ]]\nTrue")
+          result (dscloj/parse-output response module)]
+      (is (= ["x" "y"] (:items result)))
+      (is (= 2 (:count result)))
+      (is (true? (:valid result))))))
+
+(deftest module-prompt-json-hint-test
+  (testing "Prompt includes JSON hint for map outputs"
+    (let [module {:outputs [{:name :data
+                             :spec [:map [:x :string]]
+                             :description "Data object"}]}
+          prompt (dscloj/module->prompt module)]
+      (is (re-find #"respond with valid JSON" prompt))))
+
+  (testing "Prompt includes JSON hint for vector outputs"
+    (let [module {:outputs [{:name :items
+                             :spec [:vector :string]
+                             :description "List of items"}]}
+          prompt (dscloj/module->prompt module)]
+      (is (re-find #"respond with valid JSON" prompt))))
+
+  (testing "Prompt does not include JSON hint for simple outputs"
+    (let [module {:outputs [{:name :answer
+                             :spec :string
+                             :description "The answer"}]}
+          prompt (dscloj/module->prompt module)]
+      (is (not (re-find #"respond with valid JSON" prompt))))))
