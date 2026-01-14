@@ -48,11 +48,11 @@
 
 (defn complex-spec?
   "Check if a Malli spec requires JSON serialization.
-  Returns true for :map, :vector, :sequential, :set, :tuple, etc.
+  Returns true for :map, :map-of, :vector, :sequential, :set, :tuple, etc.
   Note: :enum is NOT included - enums are plain string values."
   [spec]
   (and (vector? spec)
-       (#{:map :vector :sequential :set :tuple :or :and :maybe} (first spec))))
+       (#{:map :map-of :vector :sequential :set :tuple :or :and :maybe} (first spec))))
 
 (defn spec->type-str
   "Convert Malli spec to string type representation.
@@ -81,6 +81,11 @@
                                  optional? (:optional opts)]]
                        (str (name k) (when optional? "?") ": " (spec->type-str field-spec)))]
       (str "json {" (str/join ", " field-strs) "}"))
+
+    ;; Map-of - describe as JSON object with dynamic keys
+    (and (vector? spec) (= :map-of (first spec)))
+    (let [[_ key-spec val-spec] spec]
+      (str "json object with " (spec->type-str key-spec) " keys and " (spec->type-str val-spec) " values"))
 
     ;; Vector/sequential - describe as JSON array
     (and (vector? spec) (#{:vector :sequential} (first spec)))
