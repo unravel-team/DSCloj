@@ -216,9 +216,9 @@
   (testing "complex-spec? detects complex types"
     (is (dscloj/complex-spec? [:map [:x :string]]))
     (is (dscloj/complex-spec? [:vector :int]))
-    (is (dscloj/complex-spec? [:enum "a" "b" "c"]))
     (is (dscloj/complex-spec? [:sequential :string]))
     (is (dscloj/complex-spec? [:maybe :string]))
+    (is (not (dscloj/complex-spec? [:enum "a" "b" "c"]))) ;; enums are plain values, not JSON
     (is (not (dscloj/complex-spec? :string)))
     (is (not (dscloj/complex-spec? :int)))
     (is (not (dscloj/complex-spec? [:string {:min 1}]))))
@@ -244,7 +244,7 @@
            (dscloj/spec->type-str [:vector :int]))))
 
   (testing "spec->type-str handles enum schemas"
-    (is (= "one of: \"a\", \"b\", \"c\""
+    (is (= "one of: a, b, c"
            (dscloj/spec->type-str [:enum "a" "b" "c"]))))
 
   (testing "spec->type-str handles maybe schemas"

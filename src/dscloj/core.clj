@@ -48,10 +48,11 @@
 
 (defn complex-spec?
   "Check if a Malli spec requires JSON serialization.
-  Returns true for :map, :vector, :sequential, :set, :tuple, :enum, etc."
+  Returns true for :map, :vector, :sequential, :set, :tuple, etc.
+  Note: :enum is NOT included - enums are plain string values."
   [spec]
   (and (vector? spec)
-       (#{:map :vector :sequential :set :tuple :enum :or :and :maybe} (first spec))))
+       (#{:map :vector :sequential :set :tuple :or :and :maybe} (first spec))))
 
 (defn spec->type-str
   "Convert Malli spec to string type representation.
@@ -87,7 +88,7 @@
 
     ;; Enum - list options
     (and (vector? spec) (= :enum (first spec)))
-    (str "one of: " (str/join ", " (map pr-str (rest spec))))
+    (str "one of: " (str/join ", " (map str (rest spec))))
 
     ;; Maybe - nullable
     (and (vector? spec) (= :maybe (first spec)))
@@ -209,6 +210,9 @@
                                                  (= type-str "bool")
                                                  "        # note: the value you produce must be True or False"
 
+                                                 (and (vector? spec) (= :enum (first spec)))
+                                                 "        # note: respond with just the value, no quotes"
+
                                                  (complex-spec? spec)
                                                  "        # note: respond with valid JSON"
 
@@ -222,6 +226,14 @@
         ;; Combine all sections
         sections (filter some? [input-section output-section interaction-format instructions-section])]
     (str/join "\n" sections)))
+
+(defn- strip-completion-marker
+  "Remove the [[ ## completed ## ]] marker and anything after it from a string."
+  [s]
+  (when s
+    (-> s
+        (str/replace #"\[\[\s*##\s*completed\s*##\s*\]\].*$" "")
+        (str/trim))))
 
 (defn parse-output
   "Parse LLM output based on module's output field definitions.
@@ -242,7 +254,9 @@
                         (let [pattern (re-pattern (str "\\[\\[\\s*##\\s*" (name field-name) "\\s*##\\s*\\]\\]\\s*\\n([\\s\\S]*?)(?=\\n\\[\\[\\s*##|$)"))
                               match (re-find pattern text)]
                           (when match
-                            (str/trim (second match)))))
+                            (-> (second match)
+                                (str/trim)
+                                (strip-completion-marker)))))
 
         ;; Get base type from spec (unwrap [:string {:min 1}] -> :string)
         base-type (fn [spec]
