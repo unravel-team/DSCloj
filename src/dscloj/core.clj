@@ -168,6 +168,117 @@
         value))))
 
 ;; =============================================================================
+;; JSON Schema Conversion (for function calling)
+;; =============================================================================
+
+(defn malli-spec->json-schema
+  "Convert a Malli spec to JSON Schema format for function calling parameters.
+
+  Supports common Malli types: :string, :int, :double, :boolean, :enum, :map, :vector, etc."
+  [spec]
+  (cond
+    ;; Primitives
+    (= spec :string) {:type "string"}
+    (= spec :int) {:type "integer"}
+    (= spec :double) {:type "number"}
+    (= spec :float) {:type "number"}
+    (= spec :boolean) {:type "boolean"}
+    (= spec :any) {}
+    (= spec 'string?) {:type "string"}
+    (= spec 'int?) {:type "integer"}
+    (= spec 'double?) {:type "number"}
+    (= spec 'float?) {:type "number"}
+    (= spec 'boolean?) {:type "boolean"}
+
+    ;; Enum - list allowed values
+    (and (vector? spec) (= :enum (first spec)))
+    {:type "string" :enum (mapv str (rest spec))}
+
+    ;; Maybe - nullable
+    (and (vector? spec) (= :maybe (first spec)))
+    (let [inner (malli-spec->json-schema (second spec))]
+      (if (:type inner)
+        (assoc inner :nullable true)
+        inner))
+
+    ;; Map with explicit fields
+    (and (vector? spec) (= :map (first spec)))
+    (let [fields (filter vector? (rest spec))
+          required-fields (for [[k & rest] fields
+                                :let [opts (when (map? (first rest)) (first rest))
+                                      optional? (:optional opts)]
+                                :when (not optional?)]
+                            (name k))
+          properties (into {}
+                           (for [[k & rest] fields
+                                 :let [opts (when (map? (first rest)) (first rest))
+                                       field-spec (if opts (second rest) (first rest))]]
+                             [(name k) (malli-spec->json-schema field-spec)]))]
+      (cond-> {:type "object" :properties properties}
+        (seq required-fields) (assoc :required (vec required-fields))))
+
+    ;; Map-of - object with additionalProperties
+    (and (vector? spec) (= :map-of (first spec)))
+    {:type "object" :additionalProperties (malli-spec->json-schema (nth spec 2))}
+
+    ;; Vector/sequential - array
+    (and (vector? spec) (#{:vector :sequential} (first spec)))
+    {:type "array" :items (malli-spec->json-schema (second spec))}
+
+    ;; Set - array with unique items
+    (and (vector? spec) (= :set (first spec)))
+    {:type "array" :items (malli-spec->json-schema (second spec)) :uniqueItems true}
+
+    ;; Tuple - array with positional items
+    (and (vector? spec) (= :tuple (first spec)))
+    {:type "array" :items (mapv malli-spec->json-schema (rest spec))}
+
+    ;; Wrapped specs like [:string {:min 1}] - recurse on first element
+    (vector? spec)
+    (malli-spec->json-schema (first spec))
+
+    :else {:type "string"}))
+
+(defn outputs->tool-definition
+  "Convert module outputs to a function calling tool definition.
+
+  Creates a tool that accepts all output fields as parameters."
+  [module]
+  (let [{:keys [outputs instructions]} module
+        properties (into {}
+                         (for [{:keys [name spec description]} outputs]
+                           [(clojure.core/name name)
+                            (cond-> (malli-spec->json-schema spec)
+                              description (assoc :description description))]))
+        required (mapv #(clojure.core/name (:name %)) outputs)]
+    {:type "function"
+     :function {:name "submit_response"
+                :description (or instructions "Submit the structured response")
+                :parameters {:type "object"
+                             :properties properties
+                             :required required}}}))
+
+(defn- parse-tool-call-response
+  "Parse the tool call response from an LLM that used function calling.
+
+  Returns a map of output field names to values."
+  [response outputs]
+  (let [tool-calls (-> response :choices first :message :tool-calls)
+        first-call (first tool-calls)]
+    (when first-call
+      (let [arguments-str (-> first-call :function :arguments)
+            parsed (try
+                     (json/read-str arguments-str :key-fn keyword)
+                     (catch Exception _ nil))]
+        ;; Convert string keys to keyword keys matching output names
+        (when parsed
+          (into {}
+                (for [{:keys [name]} outputs
+                      :let [k (keyword (clojure.core/name name))
+                            v (get parsed k (get parsed (clojure.core/name name)))]]
+                  [name v])))))))
+
+;; =============================================================================
 ;; Core Functions
 ;; =============================================================================
 
@@ -298,70 +409,130 @@
                   converted-value (convert-value raw-value spec)]
               [name converted-value])))))
 
-(defn predict
-  "Make a prediction using an LLM via the router API.
-  
-  Parameters:
-  - provider-config: Either a keyword referencing a registered provider config, or a map with:
-                     {:provider :openai :model \"gpt-4\" :config {:api-key \"...\"}}
-  - module: The module definition with :inputs/:outputs fields containing :spec for Malli schemas
-  - input-map: Map of input field names to values
-  - options: Optional configuration map (e.g., :temperature, :validate?)
-  
-  Options:
-  - :temperature - Temperature for sampling
-  - :validate? - Whether to validate inputs/outputs with Malli specs (default: true)
-  - Any other LLM-specific options
-  
-  Returns parsed output as a map based on module's output fields.
-  
-  Examples:
-    ;; Using registered provider
-    (register-provider! :gpt4 {:provider :openai :model \"gpt-4\" :config {:api-key \"sk-...\"}})
-    (predict :gpt4 qa-module {:question \"What is 2+2?\"})
-    
-    ;; Ad-hoc provider (no registration)
-    (predict {:provider :anthropic :model \"claude-3-5-sonnet-20241022\" 
-              :config {:api-key \"sk-...\"}}
-             qa-module 
-             {:question \"What is 2+2?\"})"
-  [provider-config module input-map & [options]]
-  (let [;; Validate inputs if requested
-        should-validate? (get options :validate? true)
-        validated-input (if should-validate?
-                         (validate-inputs (:inputs module) input-map)
-                         input-map)
-        
-        ;; Generate base prompt from module
+(defn- predict-with-function-calling
+  "Internal: Make a prediction using function calling for structured output."
+  [provider-config module validated-input options]
+  (let [{:keys [inputs outputs instructions]} module
+
+        ;; Build a clean prompt with inputs and instructions
+        input-section (str/join "\n\n"
+                                (for [{:keys [name description]} inputs]
+                                  (str (clojure.core/name name) ": " (get validated-input name ""))))
+
+        prompt (str (when instructions (str instructions "\n\n"))
+                    "Given the following inputs:\n" input-section
+                    "\n\nCall the submit_response function with your answer.")
+
+        ;; Create tool definition from outputs
+        tool-def (outputs->tool-definition module)
+
+        ;; Call LLM with function calling
+        response (router/completion provider-config
+                                    (merge {:messages [{:role :user :content prompt}]
+                                            :tools [tool-def]
+                                            :tool_choice {:type "function"
+                                                          :function {:name "submit_response"}}}
+                                           (dissoc options :validate? :with-metadata? :use-function-calling?)))]
+    {:parsed (parse-tool-call-response response outputs)
+     :response response}))
+
+(defn- predict-with-markers
+  "Internal: Make a prediction using marker-based parsing for structured output."
+  [provider-config module validated-input options]
+  (let [;; Generate base prompt from module
         base-prompt (module->prompt module)
-        
+
         ;; Add input values to the prompt
         input-section (str/join "\n\n"
                                 (for [{:keys [name]} (:inputs module)]
                                   (str "[[ ## " (clojure.core/name name) " ## ]]\n"
                                        (get validated-input name ""))))
-        
+
         ;; Combine into full prompt
         full-prompt (str base-prompt "\n\n" input-section)
-        
+
         ;; Call LLM via router API
         response (router/completion provider-config
-                                   (merge {:messages [{:role :user :content full-prompt}]}
-                                          (dissoc options :validate?)))
-        
-        ;; Parse and return structured output
-        parsed (parse-output (-> response
-                                 :choices
-                                 first
-                                 :message
-                                 :content)
-                             module)
-        
+                                    (merge {:messages [{:role :user :content full-prompt}]}
+                                           (dissoc options :validate? :with-metadata? :use-function-calling?)))]
+    {:parsed (parse-output (-> response :choices first :message :content) module)
+     :response response}))
+
+(defn predict
+  "Make a prediction using an LLM via the router API.
+
+  Parameters:
+  - provider-config: Either a keyword referencing a registered provider config, or a map with:
+                     {:provider :openai :model \"gpt-4\" :config {:api-key \"...\"}}
+  - module: The module definition with :inputs/:outputs fields containing :spec for Malli schemas
+  - input-map: Map of input field names to values
+  - options: Optional configuration map (e.g., :temperature, :validate?, :with-metadata?)
+
+  Options:
+  - :temperature - Temperature for sampling
+  - :validate? - Whether to validate inputs/outputs with Malli specs (default: true)
+  - :with-metadata? - Return full response with :outputs, :usage, :model (default: false)
+  - :use-function-calling? - Force function calling on/off (default: auto-detect)
+  - Any other LLM-specific options
+
+  Returns:
+  - If :with-metadata? is false (default): parsed output map based on module's output fields
+  - If :with-metadata? is true: {:outputs {...} :usage {:prompt_tokens N :completion_tokens N :total_tokens N} :model \"...\"}
+
+  Examples:
+    ;; Using registered provider
+    (register-provider! :gpt4 {:provider :openai :model \"gpt-4\" :config {:api-key \"sk-...\"}})
+    (predict :gpt4 qa-module {:question \"What is 2+2?\"})
+
+    ;; With metadata for tracing/cost tracking
+    (predict :gpt4 qa-module {:question \"What is 2+2?\"} {:with-metadata? true})
+    ;; => {:outputs {:answer \"4\"} :usage {:prompt_tokens 50 :completion_tokens 10 :total_tokens 60} :model \"gpt-4\"}
+
+    ;; Ad-hoc provider (no registration)
+    (predict {:provider :anthropic :model \"claude-3-5-sonnet-20241022\"
+              :config {:api-key \"sk-...\"}}
+             qa-module
+             {:question \"What is 2+2?\"})"
+  [provider-config module input-map & [options]]
+  (let [;; Validate inputs if requested
+        should-validate? (get options :validate? true)
+        with-metadata? (get options :with-metadata? false)
+        validated-input (if should-validate?
+                          (validate-inputs (:inputs module) input-map)
+                          input-map)
+
+        ;; Determine if we should use function calling
+        ;; Auto-detect based on provider support, or use explicit option
+        use-fc? (if (contains? options :use-function-calling?)
+                  (:use-function-calling? options)
+                  (try
+                    (router/supports-function-calling? provider-config)
+                    (catch Exception _ false)))
+
+        ;; Helper to check if parsed result is empty (nil or all nil values)
+        empty-result? (fn [m] (or (nil? m)
+                                  (and (map? m) (every? nil? (vals m)))))
+
+        ;; Make the prediction using the appropriate method
+        {:keys [parsed response]} (if use-fc?
+                                    (let [fc-result (try
+                                                      (predict-with-function-calling provider-config module validated-input options)
+                                                      (catch Exception e nil))]
+                                      ;; Fall back to markers if function calling fails or returns empty
+                                      (if (or (nil? fc-result) (empty-result? (:parsed fc-result)))
+                                        (predict-with-markers provider-config module validated-input options)
+                                        fc-result))
+                                    (predict-with-markers provider-config module validated-input options))
+
         ;; Validate outputs if requested
         validated-output (if should-validate?
-                          (validate-outputs (:outputs module) parsed)
-                          parsed)]
-    validated-output))
+                           (validate-outputs (:outputs module) parsed)
+                           parsed)]
+    (if with-metadata?
+      {:outputs validated-output
+       :usage (:usage response)
+       :model (:model response)}
+      validated-output)))
 
 ;; =============================================================================
 ;; Streaming Support

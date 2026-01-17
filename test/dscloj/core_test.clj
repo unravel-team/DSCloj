@@ -317,3 +317,112 @@
                              :description "The answer"}]}
           prompt (dscloj/module->prompt module)]
       (is (not (re-find #"respond with valid JSON" prompt))))))
+
+;; =============================================================================
+;; JSON Schema Conversion Tests (for function calling)
+;; =============================================================================
+
+(deftest malli-spec->json-schema-test
+  (testing "Primitive types convert to JSON Schema"
+    (is (= {:type "string"} (dscloj/malli-spec->json-schema :string)))
+    (is (= {:type "integer"} (dscloj/malli-spec->json-schema :int)))
+    (is (= {:type "number"} (dscloj/malli-spec->json-schema :double)))
+    (is (= {:type "number"} (dscloj/malli-spec->json-schema :float)))
+    (is (= {:type "boolean"} (dscloj/malli-spec->json-schema :boolean)))
+    (is (= {} (dscloj/malli-spec->json-schema :any))))
+
+  (testing "Predicate symbols convert to JSON Schema"
+    (is (= {:type "string"} (dscloj/malli-spec->json-schema 'string?)))
+    (is (= {:type "integer"} (dscloj/malli-spec->json-schema 'int?)))
+    (is (= {:type "number"} (dscloj/malli-spec->json-schema 'double?)))
+    (is (= {:type "boolean"} (dscloj/malli-spec->json-schema 'boolean?))))
+
+  (testing "Enum converts to JSON Schema with allowed values"
+    (is (= {:type "string" :enum ["a" "b" "c"]}
+           (dscloj/malli-spec->json-schema [:enum "a" "b" "c"]))))
+
+  (testing "Maybe converts to nullable"
+    (is (= {:type "string" :nullable true}
+           (dscloj/malli-spec->json-schema [:maybe :string]))))
+
+  (testing "Map converts to object with properties"
+    (let [schema (dscloj/malli-spec->json-schema [:map [:name :string] [:age :int]])]
+      (is (= "object" (:type schema)))
+      (is (= {:type "string"} (get-in schema [:properties "name"])))
+      (is (= {:type "integer"} (get-in schema [:properties "age"])))
+      (is (= ["name" "age"] (:required schema)))))
+
+  (testing "Map with optional fields"
+    (let [schema (dscloj/malli-spec->json-schema [:map
+                                                   [:name :string]
+                                                   [:email {:optional true} :string]])]
+      (is (= ["name"] (:required schema)))
+      (is (some? (get-in schema [:properties "email"])))))
+
+  (testing "Vector converts to array"
+    (is (= {:type "array" :items {:type "string"}}
+           (dscloj/malli-spec->json-schema [:vector :string])))
+    (is (= {:type "array" :items {:type "integer"}}
+           (dscloj/malli-spec->json-schema [:vector :int]))))
+
+  (testing "Sequential converts to array"
+    (is (= {:type "array" :items {:type "string"}}
+           (dscloj/malli-spec->json-schema [:sequential :string]))))
+
+  (testing "Set converts to array with uniqueItems"
+    (is (= {:type "array" :items {:type "string"} :uniqueItems true}
+           (dscloj/malli-spec->json-schema [:set :string]))))
+
+  (testing "Map-of converts to object with additionalProperties"
+    (is (= {:type "object" :additionalProperties {:type "string"}}
+           (dscloj/malli-spec->json-schema [:map-of :keyword :string]))))
+
+  (testing "Nested structures"
+    (let [schema (dscloj/malli-spec->json-schema
+                   [:map [:user [:map [:name :string]]]])]
+      (is (= "object" (:type schema)))
+      (is (= "object" (get-in schema [:properties "user" :type])))
+      (is (= {:type "string"} (get-in schema [:properties "user" :properties "name"])))))
+
+  (testing "Wrapped specs unwrap correctly"
+    (is (= {:type "string"}
+           (dscloj/malli-spec->json-schema [:string {:min 1}])))))
+
+(deftest outputs->tool-definition-test
+  (testing "Creates valid tool definition from simple output"
+    (let [module {:outputs [{:name :answer :spec :string :description "The answer"}]
+                  :instructions "Answer the question"}
+          tool-def (dscloj/outputs->tool-definition module)]
+      (is (= "function" (:type tool-def)))
+      (is (= "submit_response" (get-in tool-def [:function :name])))
+      (is (= "Answer the question" (get-in tool-def [:function :description])))
+      (is (= "object" (get-in tool-def [:function :parameters :type])))
+      (is (= {:type "string" :description "The answer"}
+             (get-in tool-def [:function :parameters :properties "answer"])))
+      (is (= ["answer"] (get-in tool-def [:function :parameters :required])))))
+
+  (testing "Creates tool definition with multiple outputs"
+    (let [module {:outputs [{:name :score :spec :double :description "Score 0-1"}
+                            {:name :valid :spec :boolean :description "Is valid"}]
+                  :instructions "Evaluate"}
+          tool-def (dscloj/outputs->tool-definition module)]
+      (is (= {:type "number" :description "Score 0-1"}
+             (get-in tool-def [:function :parameters :properties "score"])))
+      (is (= {:type "boolean" :description "Is valid"}
+             (get-in tool-def [:function :parameters :properties "valid"])))
+      (is (= ["score" "valid"] (get-in tool-def [:function :parameters :required])))))
+
+  (testing "Creates tool definition with complex output"
+    (let [module {:outputs [{:name :data
+                             :spec [:map [:items [:vector :string]] [:count :int]]
+                             :description "Result data"}]}
+          tool-def (dscloj/outputs->tool-definition module)]
+      (is (= "object" (get-in tool-def [:function :parameters :properties "data" :type])))
+      (is (= {:type "array" :items {:type "string"}}
+             (get-in tool-def [:function :parameters :properties "data" :properties "items"])))))
+
+  (testing "Uses default description when instructions not provided"
+    (let [module {:outputs [{:name :x :spec :string}]}
+          tool-def (dscloj/outputs->tool-definition module)]
+      (is (= "Submit the structured response"
+             (get-in tool-def [:function :description]))))))
