@@ -154,17 +154,43 @@
           (validate-field field value)))))
   output-map)
 
+(defn- strip-markdown-code-block
+  "Strip markdown code block formatting from a string.
+   Handles ```json, ```JSON, ``` (plain), etc."
+  [s]
+  (let [trimmed (str/trim s)]
+    (if (str/starts-with? trimmed "```")
+      ;; Remove opening ``` with optional language identifier and closing ```
+      (let [;; Find end of first line (after ```json or similar)
+            first-newline (str/index-of trimmed "\n")
+            ;; Content starts after first newline
+            content-start (if first-newline (inc first-newline) 3)
+            ;; Find closing ```
+            closing-idx (str/last-index-of trimmed "```")
+            ;; Extract content between markers
+            content (if (and closing-idx (> closing-idx content-start))
+                      (subs trimmed content-start closing-idx)
+                      (subs trimmed content-start))]
+        (str/trim content))
+      trimmed)))
+
 (defn- parse-json-value
   "Parse a string as JSON if it looks like JSON (starts with { or [).
+  Handles markdown code block formatting (```json ... ```).
   Returns the parsed Clojure data structure, or the original value if parsing fails."
   [value]
   (when value
-    (let [trimmed (str/trim value)]
-      (if (or (str/starts-with? trimmed "{")
-              (str/starts-with? trimmed "["))
+    (let [trimmed (str/trim value)
+          ;; Strip markdown code blocks if present
+          cleaned (strip-markdown-code-block trimmed)]
+      (if (or (str/starts-with? cleaned "{")
+              (str/starts-with? cleaned "["))
         (try
-          (json/read-str trimmed :key-fn keyword)
-          (catch Exception _ value))
+          (json/read-str cleaned :key-fn keyword)
+          (catch Exception _e
+            ;; Return original value if JSON parsing fails
+            value))
+        ;; Not JSON, return as-is
         value))))
 
 ;; =============================================================================
@@ -269,7 +295,7 @@
       (let [arguments-str (-> first-call :function :arguments)
             parsed (try
                      (json/read-str arguments-str :key-fn keyword)
-                     (catch Exception _ nil))]
+                     (catch Exception _e nil))]
         ;; Convert string keys to keyword keys matching output names
         (when parsed
           (into {}
@@ -517,7 +543,7 @@
         {:keys [parsed response]} (if use-fc?
                                     (let [fc-result (try
                                                       (predict-with-function-calling provider-config module validated-input options)
-                                                      (catch Exception e nil))]
+                                                      (catch Exception _e nil))]
                                       ;; Fall back to markers if function calling fails or returns empty
                                       (if (or (nil? fc-result) (empty-result? (:parsed fc-result)))
                                         (predict-with-markers provider-config module validated-input options)
