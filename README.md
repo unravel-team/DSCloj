@@ -165,6 +165,39 @@ DSCloj uses [Malli](https://github.com/metosin/malli) specs for defining field t
                {:validate? false})  ; Skip validation (4th argument for options)
 ```
 
+### Composite Outputs (Lists & Nested Maps)
+
+Output fields can use composite Malli specs (`:vector`, `:map`, `:map-of`, `:sequential`, `:set`, `:tuple`). These are rendered as `json` typed fields in the prompt (with a JSON Schema derived from the Malli spec), parsed from the LLM's JSON response, and validated with the same spec:
+
+```clojure
+(def extraction-module
+  {:inputs [{:name :transcript
+             :spec :string
+             :description "Meeting transcript window"}]
+   :outputs [{:name :action_items
+              :spec [:vector
+                     [:map
+                      [:description :string]
+                      [:owner [:maybe :string]]
+                      [:priority [:int {:min 0 :max 3}]]]]
+              :description "Action items mentioned in the transcript"}]
+   :instructions "Extract action items from the transcript."})
+
+(def result (dscloj/predict :gpt4 extraction-module
+                            {:transcript "Asha will send the proposal."}))
+
+(:action_items result)
+;; => [{:description "Send proposal" :owner "asha" :priority 1}]
+```
+
+LLMs occasionally emit JSON that fails validation. Use the `:retries` option (default `0`) to automatically re-prompt the LLM with the validation error appended as feedback:
+
+```clojure
+(dscloj/predict :gpt4 extraction-module
+                {:transcript "..."}
+                {:retries 2})  ; up to 2 additional attempts on validation failure
+```
+
 ### Streaming Support
 
 DSCloj supports **streaming structured output** with progressive parsing and validation:

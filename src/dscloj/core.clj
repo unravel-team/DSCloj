@@ -2,6 +2,8 @@
   (:require [litellm.router :as router]
             [clojure.string :as str]
             [malli.core :as m]
+            [malli.json-schema :as json-schema]
+            [cheshire.core :as json]
             [clojure.core.async :as async :refer [go-loop <! >! chan close!]]
             [litellm.streaming :as streaming]))
 
@@ -45,6 +47,25 @@
 ;; Malli Schema Support
 ;; =============================================================================
 
+(def ^:private composite-spec-heads
+  "Vector-form Malli spec heads that describe composite (array/nested) values."
+  #{:vector :sequential :set :map :map-of :tuple})
+
+(defn composite-spec?
+  "Return true if the Malli spec describes a composite value (array or nested map).
+
+  Composite specs are vector-form specs whose head is one of :vector,
+  :sequential, :set, :map, :map-of, or :tuple, as well as [:maybe X] where
+  X is itself composite. Scalar specs (including property-only forms like
+  [:string {:min 1}] and [:maybe :string]) are not composite."
+  [spec]
+  (boolean
+   (and (vector? spec)
+        (let [head (first spec)]
+          (or (contains? composite-spec-heads head)
+              (and (= head :maybe)
+                   (composite-spec? (last spec))))))))
+
 (defn spec->type-str
   "Convert Malli spec to string type representation."
   [spec]
@@ -59,6 +80,7 @@
     (= spec 'double?) "float"
     (= spec 'float?) "float"
     (= spec 'boolean?) "bool"
+    (composite-spec? spec) "json"
     (vector? spec) (spec->type-str (first spec))
     :else "str"))
 
@@ -157,7 +179,10 @@
                                           (str "[[ ## " (clojure.core/name name) " ## ]]\n"
                                                "{" (clojure.core/name name) "}"
                                                (when (= type-str "bool")
-                                                 "        # note: the value you produce must be True or False"))))))))
+                                                 "        # note: the value you produce must be True or False")
+                                               (when (= type-str "json")
+                                                 (str "        # note: the value you produce must be valid JSON matching this JSON Schema: "
+                                                      (json/generate-string (json-schema/transform spec)))))))))))
         
         ;; Instructions section
         instructions-section (when instructions
@@ -188,17 +213,28 @@
                           (when match
                             (str/trim (second match)))))
         
+        ;; Strip optional markdown code fences (```json ... ``` or ``` ... ```)
+        strip-code-fences (fn [value]
+                            (let [trimmed (str/trim value)]
+                              (if-let [match (re-find #"(?s)^```(?:json)?\s*\n?(.*?)\n?```$" trimmed)]
+                                (str/trim (second match))
+                                trimmed)))
+
         ;; Convert string value to appropriate type
         convert-type (fn [value type-str]
                        (cond
                          (nil? value) nil
-                         (= type-str "bool") (or (= value "True") 
+                         (= type-str "bool") (or (= value "True")
                                                   (= value "true")
                                                   (= value "TRUE"))
                          (= type-str "int") (try (Long/parseLong value)
                                                  (catch Exception _ value))
                          (= type-str "float") (try (Double/parseDouble value)
                                                    (catch Exception _ value))
+                         ;; parse-string-strict keeps top-level arrays as vectors
+                         ;; (lazy seqs would fail [:vector ...] Malli validation)
+                         (= type-str "json") (try (json/parse-string-strict (strip-code-fences value) true)
+                                                  (catch Exception _ value))
                          :else value))]
 
 
@@ -209,70 +245,106 @@
                   converted-value (convert-type raw-value type-str)]
               [name converted-value])))))
 
+(defn- validation-feedback-messages
+  "Build the retry messages vector after a failed output validation.
+
+  Parameters:
+  - full-prompt: The original user prompt string
+  - raw-response: The raw LLM response that failed validation
+  - exception: The validation exception thrown by validate-outputs
+
+  Returns a messages vector with the original user prompt, the assistant's
+  previous raw response, and a user message describing the validation error
+  and asking for a corrected response."
+  [full-prompt raw-response exception]
+  (let [errors (:errors (ex-data exception))
+        error-text (str (ex-message exception)
+                        (when errors
+                          (str "\n" (pr-str errors))))]
+    [{:role :user :content full-prompt}
+     {:role :assistant :content raw-response}
+     {:role :user
+      :content (str "Your previous response failed validation with this error:\n"
+                    error-text
+                    "\n\nPlease respond again, re-emitting ALL output fields in the correct format.")}]))
+
 (defn predict
   "Make a prediction using an LLM via the router API.
-  
+
   Parameters:
   - provider-config: Either a keyword referencing a registered provider config, or a map with:
                      {:provider :openai :model \"gpt-4\" :config {:api-key \"...\"}}
   - module: The module definition with :inputs/:outputs fields containing :spec for Malli schemas
   - input-map: Map of input field names to values
   - options: Optional configuration map (e.g., :temperature, :validate?)
-  
+
   Options:
   - :temperature - Temperature for sampling
   - :validate? - Whether to validate inputs/outputs with Malli specs (default: true)
+  - :retries - Number of additional LLM calls to attempt when output validation
+               fails (default: 0). Each retry feeds the validation error back to
+               the LLM. Has no effect when :validate? is false.
   - Any other LLM-specific options
-  
+
   Returns parsed output as a map based on module's output fields.
-  
+
   Examples:
     ;; Using registered provider
     (register-provider! :gpt4 {:provider :openai :model \"gpt-4\" :config {:api-key \"sk-...\"}})
     (predict :gpt4 qa-module {:question \"What is 2+2?\"})
-    
+
     ;; Ad-hoc provider (no registration)
-    (predict {:provider :anthropic :model \"claude-3-5-sonnet-20241022\" 
+    (predict {:provider :anthropic :model \"claude-3-5-sonnet-20241022\"
               :config {:api-key \"sk-...\"}}
-             qa-module 
+             qa-module
              {:question \"What is 2+2?\"})"
   [provider-config module input-map & [options]]
   (let [;; Validate inputs if requested
         should-validate? (get options :validate? true)
+        retries (get options :retries 0)
         validated-input (if should-validate?
                          (validate-inputs (:inputs module) input-map)
                          input-map)
-        
+
         ;; Generate base prompt from module
         base-prompt (module->prompt module)
-        
+
         ;; Add input values to the prompt
         input-section (str/join "\n\n"
                                 (for [{:keys [name]} (:inputs module)]
                                   (str "[[ ## " (clojure.core/name name) " ## ]]\n"
                                        (get validated-input name ""))))
-        
+
         ;; Combine into full prompt
         full-prompt (str base-prompt "\n\n" input-section)
-        
-        ;; Call LLM via router API
-        response (router/completion provider-config
-                                   (merge {:messages [{:role :user :content full-prompt}]}
-                                          (dissoc options :validate?)))
-        
-        ;; Parse and return structured output
-        parsed (parse-output (-> response
-                                 :choices
-                                 first
-                                 :message
-                                 :content)
-                             module)
-        
-        ;; Validate outputs if requested
-        validated-output (if should-validate?
-                          (validate-outputs (:outputs module) parsed)
-                          parsed)]
-    validated-output))
+
+        ;; Options forwarded to the LLM (strip dscloj-only keys)
+        llm-options (dissoc options :validate? :retries)]
+    (loop [messages [{:role :user :content full-prompt}]
+           remaining retries]
+      (let [;; Call LLM via router API
+            response (router/completion provider-config
+                                        (merge {:messages messages} llm-options))
+            raw-response (-> response
+                             :choices
+                             first
+                             :message
+                             :content)
+
+            ;; Parse structured output
+            parsed (parse-output raw-response module)]
+        (if-not should-validate?
+          parsed
+          ;; Validate outputs, retrying with feedback when attempts remain
+          (let [outcome (try
+                          {:result (validate-outputs (:outputs module) parsed)}
+                          (catch Exception e
+                            {:error e}))]
+            (cond
+              (contains? outcome :result) (:result outcome)
+              (pos? remaining) (recur (validation-feedback-messages full-prompt raw-response (:error outcome))
+                                      (dec remaining))
+              :else (throw (:error outcome)))))))))
 
 ;; =============================================================================
 ;; Streaming Support
@@ -363,7 +435,7 @@
         stream-ch (router/completion provider-config
                                     (merge {:messages [{:role :user :content full-prompt}]
                                             :stream true}
-                                           (dissoc options :on-chunk :debounce-ms :validate?)))
+                                           (dissoc options :on-chunk :debounce-ms :validate? :retries)))
         
         debounce-ms (get options :debounce-ms 10)
         on-chunk-fn (get options :on-chunk)

@@ -1,10 +1,11 @@
 {:paths ["src" "resources" "examples"]
  :group-id "tech.unravel"
  :artifact-id "dscloj"
- :version "0.1.0-alpha.1"
+ :version "0.1.0-alpha.3"
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         tech.unravel/litellm-clj {:mvn/version "0.3.0-alpha"}
         metosin/malli {:mvn/version "0.16.4"}
+        cheshire/cheshire {:mvn/version "5.13.0"}
         org.scicloj/clay {:mvn/version "2.0.2"}
         org.clojure/core.async {:mvn/version "1.6.681"}}
  

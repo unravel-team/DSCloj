@@ -1,3 +1,29 @@
+# Release Notes: DSCloj 0.1.0-alpha.3
+
+**Release Date:** 2026-06-12
+
+## Overview
+
+This release adds **composite output support**: output fields can now use composite Malli specs such as `[:vector [:map ...]]` for lists and nested maps.
+
+## ✨ New Features
+
+### Composite (JSON) Outputs
+
+- Output fields with composite Malli specs (`:vector`, `:sequential`, `:set`, `:map`, `:map-of`, `:tuple`, and `[:maybe ...]` wrapping any of those) are rendered as `json` typed fields in prompts, with an inline JSON Schema derived from the Malli spec.
+- JSON values (optionally wrapped in markdown code fences) are parsed from the LLM response into Clojure data with keyword keys and validated with the same Malli spec.
+- New public function `composite-spec?` classifies specs as composite vs. scalar.
+
+### Validation Retries
+
+- `predict` accepts a `:retries` option (default `0`). When output validation fails and attempts remain, the validation error is fed back to the LLM as a follow-up message asking it to re-emit all output fields. After exhausting retries, the last validation exception is rethrown. No effect when `:validate?` is `false`.
+
+## 📦 Dependencies
+
+- Added `cheshire/cheshire 5.13.0` as a direct dependency (previously transitive via litellm-clj).
+
+---
+
 # Release Notes: DSCloj 0.1.0-alpha.2
 
 **Release Date:** 2025-11-17
