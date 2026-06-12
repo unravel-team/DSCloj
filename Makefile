@@ -4,9 +4,9 @@ help:
 	@echo "Available targets:"
 	@echo "  repl             - Start a Clojure REPL"
 	@echo "  nrepl            - Start an nREPL server on port 7888"
-	@echo "  test             - Run tests"
-	@echo "  test-ci          - Run tests with documentation reporter"
-	@echo "  test-integration - Run integration tests (requires OPENAI_API_KEY)"
+	@echo "  test             - Run unit tests"
+	@echo "  test-ci          - Run unit tests in CI"
+	@echo "  test-integration - Run integration tests (requires OPENROUTER_API_KEY)"
 	@echo "  coverage         - Run tests with coverage report"
 	@echo "  lint             - Run clj-kondo linter"
 	@echo "  compile          - Compile and check syntax"
@@ -23,11 +23,14 @@ nrepl:
 	clojure -M:repl -m nrepl.cmdline --middleware '["cider.nrepl/cider-middleware"]' --port 7888
 
 test:
-	clojure -M:test -m kaocha.runner
+	clojure -M:test -m kaocha.runner unit
+
+test-ci:
+	clojure -M:test -m kaocha.runner unit
 
 test-integration:
-	@echo "Running integration tests (requires OPENAI_API_KEY)..."
-	clojure -M:test -m kaocha.runner --focus-meta :integration
+	@echo "Running integration tests (requires OPENROUTER_API_KEY)..."
+	clojure -M:test -m kaocha.runner integration
 
 coverage:
 	clojure -M:test:coverage
