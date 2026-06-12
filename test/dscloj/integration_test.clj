@@ -2,89 +2,72 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [dscloj.core :as dscloj]))
 
-(def api-key-available?
-  "Check if OPENAI_API_KEY is set in environment"
-  (not (nil? (System/getenv "OPENAI_API_KEY"))))
+(def openrouter-api-key
+  "OpenRouter API key for live integration tests."
+  (System/getenv "OPENROUTER_API_KEY"))
+
+(def openrouter-model
+  "Cheap, deterministic default model for live integration tests.
+   CI may override this with OPENROUTER_MODEL."
+  (or (System/getenv "OPENROUTER_MODEL")
+      "openai/gpt-4o-mini"))
+
+(defn- api-key-available? []
+  (boolean (seq openrouter-api-key)))
+
+(defn- ci? []
+  (= "true" (System/getenv "CI")))
 
 (defn setup-test-provider
-  "Fixture to register test provider and skip tests if API key is not available"
+  "Register OpenRouter provider when OPENROUTER_API_KEY is available.
+
+  These tests intentionally keep one live provider smoke. Unit tests already cover
+  DSCloj parsing/validation in detail; this verifies the generated prompt still
+  works against a real chat-completions model without making DSCloj responsible
+  for testing every litellm provider."
   [f]
-  (if api-key-available?
+  (cond
+    (api-key-available?)
     (do
-      ;; Register test provider
-      (dscloj/register-provider! :test-openai
-                                 {:provider :openai
-                                  :model "gpt-3.5-turbo"
-                                  :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+      (dscloj/register-provider! :test-openrouter
+                                 {:provider :openrouter
+                                  :model openrouter-model
+                                  :config {:api-key openrouter-api-key}})
       (f))
-    (println "Skipping integration tests: OPENAI_API_KEY not set")))
+
+    (ci?)
+    (throw (ex-info "OPENROUTER_API_KEY is required in CI for integration tests" {}))
+
+    :else
+    (println "Skipping integration tests: OPENROUTER_API_KEY not set")))
 
 (use-fixtures :once setup-test-provider)
 
-(deftest ^:integration basic-qa-integration-test
-  (testing "Basic Q&A with OpenAI API"
-    (when api-key-available?
-      (let [qa-module {:inputs [{:name :question
-                                 :spec :string
-                                 :description "A question to answer"}]
-                       :outputs [{:name :answer
-                                  :spec :string
-                                  :description "The answer to the question"}]
-                       :instructions "Answer the question accurately and concisely."}
-            ;; Use registered provider
-            result (dscloj/predict :test-openai
-                                  qa-module 
-                                  {:question "What is 2+2? Reply with just the number."}
-                                  {:temperature 0.0})]
+(deftest ^:integration live-structured-output-integration-test
+  (testing "Live OpenRouter model can follow DSCloj structured output format"
+    (when (api-key-available?)
+      (let [module {:inputs [{:name :question
+                              :spec :string
+                              :description "A deterministic arithmetic question"}]
+                    :outputs [{:name :answer
+                               :spec :string
+                               :description "The answer as text"}
+                              {:name :numeric_answer
+                               :spec :int
+                               :description "The answer as an integer"}
+                              {:name :is_correct
+                               :spec :boolean
+                               :description "Whether the numeric answer is correct"}]
+                    :instructions (str "Answer the arithmetic question. "
+                                       "Use 4 for numeric_answer. "
+                                       "Use True for is_correct.")}
+            result (dscloj/predict :test-openrouter
+                                   module
+                                   {:question "What is 2+2?"}
+                                   {:temperature 0.0
+                                    :max-tokens 80})]
         (is (map? result))
         (is (contains? result :answer))
         (is (string? (:answer result)))
-        (is (re-find #"4" (:answer result)))))))
-
-(deftest ^:integration boolean-output-integration-test
-  (testing "Boolean output parsing with OpenAI API"
-    (when api-key-available?
-      (let [validator-module {:inputs [{:name :statement
-                                        :spec :string
-                                        :description "A statement to verify"}]
-                              :outputs [{:name :is_true
-                                         :spec :boolean
-                                         :description "Whether the statement is true or false"}]
-                              :instructions "Determine if the statement is true or false."}
-            result (dscloj/predict :test-openai
-                                  validator-module
-                                  {:statement "The Earth orbits around the Sun."}
-                                  {:temperature 0.0})]
-        (is (map? result))
-        (is (contains? result :is_true))
-        (is (boolean? (:is_true result)))
-        (is (true? (:is_true result)))))))
-
-(deftest ^:integration multiple-outputs-integration-test
-  (testing "Multiple outputs with different types"
-    (when api-key-available?
-      (let [analyzer-module {:inputs [{:name :text
-                                       :spec :string
-                                       :description "Text to analyze"}]
-                             :outputs [{:name :word_count
-                                        :spec :int
-                                        :description "Number of words"}
-                                       {:name :has_punctuation
-                                        :spec :boolean
-                                        :description "Whether text has punctuation"}
-                                       {:name :summary
-                                        :spec :string
-                                        :description "Brief summary"}]
-                             :instructions "Analyze the text and provide word count, check for punctuation, and give a brief summary."}
-            result (dscloj/predict :test-openai
-                                  analyzer-module
-                                  {:text "Hello, world! This is a test."}
-                                  {:temperature 0.0})]
-        (is (map? result))
-        (is (contains? result :word_count))
-        (is (contains? result :has_punctuation))
-        (is (contains? result :summary))
-        (is (number? (:word_count result)))
-        (is (boolean? (:has_punctuation result)))
-        (is (string? (:summary result)))
-        (is (true? (:has_punctuation result)))))))
+        (is (= 4 (:numeric_answer result)))
+        (is (true? (:is_correct result)))))))
