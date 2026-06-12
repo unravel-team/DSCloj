@@ -1,7 +1,6 @@
 {:paths ["src" "resources" "examples"]
  :group-id "tech.unravel"
  :artifact-id "dscloj"
- :version "0.1.0-alpha.3"
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         tech.unravel/litellm-clj {:mvn/version "0.3.0-alpha"}
         metosin/malli {:mvn/version "0.16.4"}
@@ -34,11 +33,8 @@
 	  ;; this allows nrepl to interrupt runaway repl evals
           :jvm-opts ["-Djdk.attach.allowAttachSelf"]
           :main-opts ["-m" "nrepl.cmdline" "--port" "7888"]}
-  :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.5"}}
+  :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.11"}
+                 slipset/deps-deploy {:mvn/version "0.2.2"}}
           :ns-default build}
   :kondo {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.03.13"}}
-          :main-opts ["-m" "clj-kondo.main"]}
-  :deploy {:replace-deps {slipset/deps-deploy {:mvn/version "0.2.2"}}
-           :exec-fn deps-deploy.deps-deploy/deploy
-           :exec-args {:installer :remote
-                       :sign-releases? false}}}}
+          :main-opts ["-m" "clj-kondo.main"]}}}
