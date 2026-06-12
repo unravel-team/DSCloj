@@ -60,3 +60,4 @@ Thumbs.db
 .env
 .env.local
 secrets.edn
+.agents/plans/
