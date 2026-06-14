@@ -9,6 +9,7 @@
   stubbed via `router/completion` so these tests make no network requests."
   (:require [clojure.test :refer [deftest is testing]]
             [dscloj.core :as dscloj]
+            [dscloj.react :as react]
             [litellm.router :as router]))
 
 (def qa-module
@@ -109,12 +110,12 @@
 
 (deftest react-instructions-test
   (testing "step-module instructions list the tools, finish, and the protocol"
-    (let [smodule (#'dscloj.core/step-module qa-module [(echo-tool (atom []))])
+    (let [smodule (#'dscloj.react/step-module qa-module [(echo-tool (atom []))])
           instr (:instructions smodule)]
       (is (re-find #"echo: Echo the given text back" instr))
       (is (re-find #"next_thought" instr))
       (is (re-find #"Answer the question using the tools" instr)))
     (testing "step-module declares the three control output fields"
-      (let [smodule (#'dscloj.core/step-module qa-module [(echo-tool (atom []))])
+      (let [smodule (#'dscloj.react/step-module qa-module [(echo-tool (atom []))])
             out-names (set (map :name (:outputs smodule)))]
         (is (= #{:next_thought :next_tool_name :next_tool_args} out-names))))))

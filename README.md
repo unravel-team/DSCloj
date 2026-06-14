@@ -241,6 +241,22 @@ DSCloj supports **streaming structured output** with progressive parsing and val
 
 See [`examples/streaming_whales.clj`](examples/streaming_whales.clj) for a complete example inspired by [Pydantic AI's streaming example](https://ai.pydantic.dev/examples/stream-whales/).
 
+### Chain of Thought
+
+`chain-of-thought` is `predict` that reasons first. It prepends a `reasoning`
+string field to your module's outputs, so the model writes its rationale before
+the declared answer; the returned map includes `:reasoning` alongside your
+outputs. Mirrors DSPy's `ChainOfThought`.
+
+```clojure
+(dscloj/chain-of-thought :gpt4 qa-module {:question "Why is the sky blue?"})
+;; => {:reasoning "Sunlight scatters off air molecules; shorter (blue) ..."
+;;     :answer "Because blue light scatters more than other colors."}
+```
+
+Everything else — provider config, Malli specs, `:validate?`, `:retries` —
+works exactly as in `predict`.
+
 ### ReAct: Tool-Using Agents
 
 `react` runs a **Reasoning + Acting** loop on top of `predict`. The LLM
@@ -279,10 +295,14 @@ works on every provider `predict` supports.
                 {:max-iters 10}))
 
 (:answer result)     ;; => "It is sunny in Tokyo."
+(:reasoning result)  ;; => rationale from the final chain-of-thought extraction
 (:stopped result)    ;; => :finished  (or :max-iters if the budget ran out)
 (:iterations result) ;; => number of turns taken
 (:trajectory result) ;; => the full thought/tool/observation transcript
 ```
+
+The final extraction uses chain-of-thought (matching DSPy), so the result also
+carries a `:reasoning` key.
 
 **Tool maps** have:
 - `:name` — the string the model selects by

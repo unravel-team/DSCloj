@@ -1,0 +1,1 @@
+{:hooks {:analyze-call {dscloj.core/import-vars hooks.dscloj-import-vars/import-vars}}}
