@@ -241,6 +241,65 @@ DSCloj supports **streaming structured output** with progressive parsing and val
 
 See [`examples/streaming_whales.clj`](examples/streaming_whales.clj) for a complete example inspired by [Pydantic AI's streaming example](https://ai.pydantic.dev/examples/stream-whales/).
 
+### ReAct: Tool-Using Agents
+
+`react` runs a **Reasoning + Acting** loop on top of `predict`. The LLM
+interleaves a thought, a tool choice, and tool arguments each turn; the chosen
+tool runs and its observation is appended to a growing trajectory; the loop
+ends when the model calls the built-in `finish` tool (or `:max-iters` turns
+elapse). A final extraction then turns the trajectory into your module's
+declared, Malli-typed outputs. No native LLM tool-calling is required — it
+works on every provider `predict` supports.
+
+```clojure
+(require '[dscloj.core :as dscloj])
+
+;; The module describes the task and its final output(s); tools are how the
+;; agent gathers or changes information along the way.
+(def research-module
+  {:inputs [{:name :question :spec :string :description "The question to answer"}]
+   :outputs [{:name :answer :spec :string :description "The final answer"}]
+   :instructions "Answer the question, using tools to look things up."})
+
+(def tools
+  [{:name "get_weather"
+    :description "Look up the current weather for a city."
+    :args [{:name :city :spec :string :description "City name"}]
+    :handler (fn [{:keys [city]}]
+               (str "The weather in " city " is sunny."))}])
+
+(dscloj/register-provider! :gpt4
+  {:provider :openai :model "gpt-4"
+   :config {:api-key (System/getenv "OPENAI_API_KEY")}})
+
+(def result
+  (dscloj/react :gpt4 research-module
+                {:question "What is the weather in Tokyo?"}
+                tools
+                {:max-iters 10}))
+
+(:answer result)     ;; => "It is sunny in Tokyo."
+(:stopped result)    ;; => :finished  (or :max-iters if the budget ran out)
+(:iterations result) ;; => number of turns taken
+(:trajectory result) ;; => the full thought/tool/observation transcript
+```
+
+**Tool maps** have:
+- `:name` — the string the model selects by
+- `:description` — what it does / when to use it
+- `:args` — optional vector of field defs (`:name`/`:spec`/`:description`), same shape as module fields; the model emits these as a JSON object
+- `:handler` — `(fn [args-map] observation-string)`. `args-map` keys are keywords parsed from the model's JSON. The return value is shown to the model as the observation; **a thrown exception is caught and its message becomes the observation**, so the agent can see the error and recover.
+
+**Options:** `:max-iters` (default 20), `:on-step` (a callback invoked after each
+turn with `{:iteration :thought :tool-name :tool-args :observation}` — useful for
+progress display), plus `:validate?`/`:retries` (applied to the final
+extraction) and any LLM options.
+
+Side-effecting tools are fully supported — a handler may create files, hit a
+database, etc. Because the handler is plain Clojure, any invariants you want to
+enforce (validation, authorization, path containment) live in your code, not in
+the model's hands.
+
 ### Switching Between Providers
 
 One of the key benefits of the router API is easy provider switching:
