@@ -162,6 +162,17 @@
 ;; Retries on validation/parse failure
 ;; =============================================================================
 
+(deftest predict-nil-content-test
+  (testing "predict tolerates a response message with nil content"
+    (with-redefs [router/completion
+                  (fn [_provider-config _request]
+                    {:choices [{:message {:role "assistant", :content nil}}]})]
+      (is (= {:answer nil}
+             (dscloj/predict :stub
+                             {:inputs [], :outputs [{:name :answer, :spec :string}]}
+                             {}
+                             {:validate? false}))))))
+
 (deftest predict-retries-test
   (testing ":retries re-calls the LLM after a validation failure and succeeds"
     (let [calls (atom 0)]
