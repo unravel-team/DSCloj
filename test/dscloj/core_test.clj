@@ -115,6 +115,12 @@
           result (dscloj/parse-output response module)]
       (is (= "not-a-number" (:score result))))))
 
+(deftest parse-output-nil-response-test
+  (testing "a nil response (model returned no content) yields nil fields"
+    (let [module {:outputs [{:name :answer, :spec :string}
+                            {:name :count, :spec :int}]}]
+      (is (= {:answer nil, :count nil} (dscloj/parse-output nil module))))))
+
 (deftest field-extraction-test
   (testing "Field name with underscores"
     (let [module {:outputs [{:name :my_field :spec :string}]}

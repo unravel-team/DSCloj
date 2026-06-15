@@ -211,11 +211,15 @@
                                           {:name :confidence :spec :boolean}]})"
   [response {:keys [outputs]}]
   (let [;; Extract content between [[ ## field_name ## ]] or [[##field_name##]] markers
+        ;; text is nil when the model returns a message with no content
+        ;; (e.g. a reasoning model that spent its budget thinking); treat
+        ;; that as "no fields present" rather than letting re-find NPE.
         extract-field (fn [field-name text]
-                        (let [pattern (re-pattern (str "\\[\\[\\s*##\\s*" (name field-name) "\\s*##\\s*\\]\\]\\s*\\n([\\s\\S]*?)(?=\\n\\[\\[\\s*##|$)"))
-                              match (re-find pattern text)]
-                          (when match
-                            (str/trim (second match)))))
+                        (when text
+                          (let [pattern (re-pattern (str "\\[\\[\\s*##\\s*" (name field-name) "\\s*##\\s*\\]\\]\\s*\\n([\\s\\S]*?)(?=\\n\\[\\[\\s*##|$)"))
+                                match (re-find pattern text)]
+                            (when match
+                              (str/trim (second match))))))
         
         ;; Strip optional markdown code fences (```json ... ``` or ``` ... ```)
         strip-code-fences (fn [value]
