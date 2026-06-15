@@ -82,6 +82,9 @@ release-minor: check-clean-worktree
 	echo "$$maj.$$((min+1))" > $(VERSION_FILE)
 	@$(MAKE) .release-commit
 
+current-version:
+	@echo "$$(cat $(VERSION_FILE)).$$(git rev-list --count HEAD 2>/dev/null || echo '?')"
+
 build:
 	clojure -T:build jar
 
